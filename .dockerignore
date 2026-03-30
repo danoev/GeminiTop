@@ -1,0 +1,8 @@
+.git
+usb_deploy
+apps/retroarch/build
+apps/doom/doomgeneric
+apps/doom/doom1.wad
+dropbear/dropbear-2025.88
+dropbear/dropbear-2025.88.tar.bz2
+*.o

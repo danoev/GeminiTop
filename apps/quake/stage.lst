@@ -1,0 +1,4 @@
+# Files to copy into usb_deploy/apps/quake
+copy app.cfg
+copy build/quake-launcher
+copy ../quake_shared/build/runtime -> ../quake-data

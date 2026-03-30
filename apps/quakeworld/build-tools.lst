@@ -1,0 +1,6 @@
+git
+make
+${GNU_PREFIX}-gcc
+${GNU_PREFIX}-ar
+${GNU_PREFIX}-strip
+

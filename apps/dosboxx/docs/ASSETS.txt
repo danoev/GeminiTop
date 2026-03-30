@@ -1,0 +1,15 @@
+DOSBox-X is fetched into:
+  apps/dosboxx/build/dosbox-x-src/
+
+The built main binary is:
+  apps/dosboxx/build/dosbox-x
+
+Windows media is not bundled. Add your own licensed images under:
+  apps/win31/images/system.img
+  apps/win95/images/system.img
+
+Exit controls on Gemini:
+  Ctrl+F9 exits DOSBox-X
+  Ctrl+F10 toggles mouse capture
+
+Touch-to-mouse is enabled as a first-pass absolute pointer mapping.

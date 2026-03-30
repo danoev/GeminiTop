@@ -1,0 +1,4 @@
+copy app.cfg
+copy build/app/netsurf -> netsurf
+copy build/app/netsurf-bin -> netsurf-bin
+copy build/app/res -> res

@@ -1,0 +1,1353 @@
+sh /tmp/sp/mnt/sdb1/gemn_recon.sh 
+=== GEMINI HARDWARE RECON ===
+Date: Thu Jan  1 00:38:20 UTC 1970
+
+=== KERNEL ===
+Linux Gemini 4.9.217 #1 Thu Feb 5 12:13:28 CST 2026 armv7l GNU/Linux
+
+=== CPU INFO ===
+processor	: 0
+model name	: ARMv7 Processor rev 5 (v7l)
+BogoMIPS	: 27.00
+Features	: half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt vfpd32 lpae evtstrm 
+CPU implementer	: 0x41
+CPU architecture: 7
+CPU variant	: 0x0
+CPU part	: 0xc07
+CPU revision	: 5
+
+Hardware	: GEMINI
+Revision	: 0000
+Serial		: 0000000000000000
+
+=== MEMORY ===
+MemTotal:         177084 kB
+MemFree:           41672 kB
+MemAvailable:     105740 kB
+Buffers:           26372 kB
+Cached:            41696 kB
+SwapCached:            0 kB
+Active:            45236 kB
+Inactive:          35364 kB
+Active(anon):      12940 kB
+Inactive(anon):      136 kB
+Active(file):      32296 kB
+Inactive(file):    35228 kB
+Unevictable:           0 kB
+Mlocked:               0 kB
+SwapTotal:         36860 kB
+SwapFree:          36860 kB
+Dirty:                 0 kB
+Writeback:             0 kB
+AnonPages:         12544 kB
+Mapped:            29372 kB
+Shmem:               544 kB
+Slab:               9108 kB
+SReclaimable:       2328 kB
+SUnreclaim:         6780 kB
+KernelStack:        1904 kB
+PageTables:         1484 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:      125400 kB
+Committed_AS:     962592 kB
+VmallocTotal:     770048 kB
+VmallocUsed:           0 kB
+VmallocChunk:          0 kB
+CmaTotal:          40960 kB
+CmaFree:               0 kB
+--- free ---
+             total       used       free     shared    buffers     cached
+Mem:        177084     135396      41688        544      26372      41696
+-/+ buffers/cache:      67328     109756
+Swap:        36860          0      36860
+
+=== STORAGE ===
+Filesystem                Size      Used Available Use% Mounted on
+/dev/root                 3.7M      3.7M         0 100% /
+devtmpfs                 86.4M     16.0K     86.4M   0% /dev
+tmpfs                    86.5M    524.0K     86.0M   1% /tmp
+/dev/blockrom10          40.3M     40.3M         0 100% /tmp/sp/usr/local
+/dev/blockrom11          17.4M     17.4M         0 100% /tmp/sp/application
+/dev/mtdblock12           8.0M      2.4M      5.6M  29% /tmp/sp/media/flash/nvm
+/dev/mtdblock27           6.0M      1.3M      4.8M  21% /tmp/sp/media/flash/userdata
+tmpfs                    86.5M    524.0K     86.0M   1% /etc
+tmpfs                    86.5M    524.0K     86.0M   1% /root
+overlay                  86.5M    524.0K     86.0M   1% /tmp/sp/system/etc
+tmpfs                    86.5M    524.0K     86.0M   1% /etc
+tmpfs                    86.5M    524.0K     86.0M   1% /root
+tmpfs                    86.5M    524.0K     86.0M   1% /etc
+tmpfs                    86.5M    524.0K     86.0M   1% /root
+tmpfs                    86.5M    524.0K     86.0M   1% /etc
+tmpfs                    86.5M    524.0K     86.0M   1% /root
+/dev/sdb1                 3.7G      2.2M      3.7G   0% /tmp/sp/mnt/sdb1
+tmpfs                    86.5M    524.0K     86.0M   1% /etc
+tmpfs                    86.5M    524.0K     86.0M   1% /root
+--- mount ---
+/dev/root on / type squashfs (ro,relatime)
+devtmpfs on /dev type devtmpfs (rw,relatime,size=88480k,nr_inodes=22120,mode=755)
+tmpfs on /tmp type tmpfs (rw,nosuid,relatime,mode=755)
+devpts on /dev/pts type devpts (rw,relatime,mode=600,ptmxmode=000)
+proc on /proc type proc (rw,relatime)
+sysfs on /sys type sysfs (rw,relatime)
+/dev/blockrom10 on /tmp/sp/usr/local type squashfs (ro,relatime)
+/dev/blockrom11 on /tmp/sp/application type squashfs (ro,relatime)
+/dev/mtdblock12 on /tmp/sp/media/flash/nvm type yaffs2 (rw,noatime)
+/dev/mtdblock27 on /tmp/sp/media/flash/userdata type yaffs2 (rw,noatime)
+tmpfs on /etc type tmpfs (rw,nosuid,relatime,mode=755)
+tmpfs on /root type tmpfs (rw,nosuid,relatime,mode=755)
+overlay on /tmp/sp/system/etc type overlay (rw,relatime,lowerdir=/usr/local/etc,upperdir=/tmp/etc_up,workdir=/tmp/etc_wk)
+tmpfs on /etc type tmpfs (rw,nosuid,relatime,mode=755)
+tmpfs on /root type tmpfs (rw,nosuid,relatime,mode=755)
+tmpfs on /etc type tmpfs (rw,nosuid,relatime,mode=755)
+tmpfs on /root type tmpfs (rw,nosuid,relatime,mode=755)
+tmpfs on /etc type tmpfs (rw,nosuid,relatime,mode=755)
+tmpfs on /root type tmpfs (rw,nosuid,relatime,mode=755)
+/dev/sdb1 on /tmp/sp/mnt/sdb1 type vfat (rw,dirsync,nosuid,nodev,noatime,nodiratime,fmask=0077,dmask=0077,codepage=437,iocharset=utf8,shortname=mixed,errors=remount-ro)
+tmpfs on /etc type tmpfs (rw,nosuid,relatime,mode=755)
+tmpfs on /root type tmpfs (rw,nosuid,relatime,mode=755)
+--- mtd partitions ---
+dev:    size   erasesize  name
+mtd0: 00020000 00020000 "nand_header"
+mtd1: 00020000 00020000 "xboot1"
+mtd2: 000e0000 00020000 "uboot1"
+mtd3: 001e0000 00020000 "uboot2"
+mtd4: 00080000 00020000 "env"
+mtd5: 00080000 00020000 "env_redund"
+mtd6: 00400000 00020000 "ecos"
+mtd7: 00480000 00020000 "kernel"
+mtd8: 00500000 00020000 "rootfs."
+mtd9: 00060000 00020000 "opt."
+mtd10: 03000000 00020000 "spsdk."
+mtd11: 01b00000 00020000 "spapp."
+mtd12: 00800000 00020000 "nvm"
+mtd13: 00020000 00020000 "pq"
+mtd14: 00600000 00020000 "logo"
+mtd15: 00020000 00020000 "tcon"
+mtd16: 00040000 00020000 "iop_car"
+mtd17: 00040000 00020000 "iop_sby"
+mtd18: 00100000 00020000 "runtime_cfg"
+mtd19: 00020000 00020000 "vi"
+mtd20: 00780000 00020000 "isp_logo"
+mtd21: 00040000 00020000 "vendordata"
+mtd22: 00300000 00020000 "pat_logo"
+mtd23: 00040000 00020000 "version_info"
+mtd24: 00040000 00020000 "vd_restore"
+mtd25: 00020000 00020000 "anm_logo"
+mtd26: 001e0000 00020000 "pic"
+mtd27: 00600000 00020000 "userdata"
+--- partitions ---
+major minor  #blocks  name
+
+ 254        0      36864 zram0
+  31        0        128 mtdblock0
+  31        1        128 mtdblock1
+  31        2        896 mtdblock2
+  31        3       1920 mtdblock3
+  31        4        512 mtdblock4
+  31        5        512 mtdblock5
+  31        6       4096 mtdblock6
+  31        7       4608 mtdblock7
+ 258        8       5120 blockrom8
+  31        8       5120 mtdblock8
+ 258        9        384 blockrom9
+  31        9        384 mtdblock9
+ 258       10      49152 blockrom10
+  31       10      49152 mtdblock10
+ 258       11      27648 blockrom11
+  31       11      27648 mtdblock11
+  31       12       8192 mtdblock12
+  31       13        128 mtdblock13
+  31       14       6144 mtdblock14
+  31       15        128 mtdblock15
+  31       16        256 mtdblock16
+  31       17        256 mtdblock17
+  31       18       1024 mtdblock18
+  31       19        128 mtdblock19
+  31       20       7680 mtdblock20
+  31       21        256 mtdblock21
+  31       22       3072 mtdblock22
+  31       23        256 mtdblock23
+  31       24        256 mtdblock24
+  31       25        128 mtdblock25
+  31       26       1920 mtdblock26
+  31       27       6144 mtdblock27
+   8       16    3910656 sdb
+   8       17    3908608 sdb1
+
+=== FRAMEBUFFER / DISPLAY ===
+1920,1440
+32
+7680
+FB-O2-1920x720
+
+mode "1920x720-60"
+	# D: 92.311 MHz, H: 46.155 kHz, V: 59.942 Hz
+	geometry 1920 720 1920 1440 32
+	timings 10833 60 16 30 10 4 10
+	accel false
+	rgba 8/16,8/8,8/0,8/24
+endmode
+
+crw-------    1 root     root       29,   0 Jan  1 00:00 /dev/fb0
+
+=== INPUT DEVICES ===
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="SPHE_IR"
+P: Phys=
+S: Sysfs=/devices/virtual/input/input0
+U: Uniq=
+H: Handlers=kbd event0 evbug 
+B: PROP=0
+B: EV=3
+B: KEY=ff0038 0 0 0 b00000 12c3c100 214004c 0 0 0 0 300 4 40000801 1e16c2 0 0 30000ffc
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="sp_virt_kb"
+P: Phys=
+S: Sysfs=/devices/virtual/input/input1
+U: Uniq=
+H: Handlers=sysrq kbd event1 evbug 
+B: PROP=0
+B: EV=3
+B: KEY=7fffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff ffffffff fffffffe
+
+I: Bus=0000 Vendor=0000 Product=0000 Version=0000
+N: Name="sp_virt_mouse"
+P: Phys=
+S: Sysfs=/devices/virtual/input/input2
+U: Uniq=
+H: Handlers=mouse0 event2 evbug 
+B: PROP=0
+B: EV=7
+B: KEY=30000 0 0 0 0 0 0 0 0
+B: REL=3
+
+I: Bus=0018 Vendor=0000 Product=0000 Version=0000
+N: Name="fts_ts"
+P: Phys=
+S: Sysfs=/devices/platform/I2C-SPIOP/i2c-1/1-0038/input/input3
+U: Uniq=
+H: Handlers=kbd event3 evbug 
+B: PROP=2
+B: EV=b
+B: KEY=804000 40 0 0 0 0 0 10800102 200000 400 0 0 0 0 40004010 40000000 1e1680 18 4d040 81460000
+B: ABS=6618000 0
+
+total 0
+drwxr-xr-x    2 root     root           160 Jan  1 00:00 .
+drwxr-xr-x    8 root     root          4540 Jan  1 00:37 ..
+crw-------    1 root     root       13,  64 Jan  1 00:00 event0
+crw-------    1 root     root       13,  65 Jan  1 00:00 event1
+crw-------    1 root     root       13,  66 Jan  1 00:00 event2
+crw-------    1 root     root       13,  67 Jan  1 00:00 event3
+crw-------    1 root     root       13,  63 Jan  1 00:00 mice
+crw-------    1 root     root       13,  32 Jan  1 00:00 mouse0
+
+=== USB DEVICES ===
+Bus 003 Device 001: ID 1d6b:0001
+Bus 002 Device 005: ID 0781:5567
+Bus 001 Device 001: ID 1d6b:0002
+Bus 004 Device 001: ID 1d6b:0001
+Bus 002 Device 001: ID 1d6b:0002
+SanDisk
+Linux 4.9.217 ehci_hcd
+Linux 4.9.217 ehci_hcd
+Linux 4.9.217 ohci_hcd
+Linux 4.9.217 ohci_hcd
+Cruzer Blade
+Generic Platform EHCI Controller
+Generic Platform EHCI Controller
+Generic Platform OHCI Controller
+Generic Platform OHCI Controller
+
+=== LOADED KERNEL MODULES ===
+ohci_hcd 23640 0 - Live 0xbfb18000
+ehci_hcd 36190 0 - Live 0xbfb0a000
+sp_bc 1743 2 ohci_hcd,ehci_hcd, Live 0xbfb06000
+cdc_ncm 11976 0 - Live 0xbfaff000
+usbnet 13695 1 cdc_ncm, Live 0xbfaf7000
+mii 2558 1 usbnet, Live 0xbfaf3000
+iacp_i2c 4818 4 - Live 0xbfaee000
+usbhid 13498 0 - Live 0xbfae6000
+mmc_block 18566 0 - Live 0xbfadd000
+8821cs 2133801 0 - Live 0xbf86e000 (O)
+spsdc 12196 0 - Live 0xbf867000
+cfg80211 180866 1 8821cs, Live 0xbf82d000
+mmc_core 69857 3 mmc_block,8821cs,spsdc, Live 0xbf812000
+c_customer 49595 0 - Live 0xbf800000
+
+=== NETWORK ===
+apple_usb0 Link encap:Ethernet  HWaddr 7A:95:A7:E6:F2:A8  
+          UP BROADCAST MULTICAST  MTU:1500  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+lo        Link encap:Local Loopback  
+          inet addr:127.0.0.1  Mask:255.0.0.0
+          inet6 addr: ::1/128 Scope:Host
+          UP LOOPBACK RUNNING  MTU:65536  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+sit0      Link encap:IPv6-in-IPv4  
+          NOARP  MTU:1480  Metric:1
+          RX packets:0 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:0 errors:0 dropped:0 overruns:0 carrier:0
+          collisions:0 txqueuelen:1 
+          RX bytes:0 (0.0 B)  TX bytes:0 (0.0 B)
+
+wlan0     Link encap:Ethernet  HWaddr 6C:35:4A:27:55:73  
+          inet addr:192.168.0.1  Bcast:192.168.0.255  Mask:255.255.255.0
+          inet6 addr: fe80::6e35:4aff:fe27:5573/64 Scope:Link
+          UP BROADCAST RUNNING MULTICAST  MTU:1500  Metric:1
+          RX packets:10979 errors:0 dropped:0 overruns:0 frame:0
+          TX packets:862 errors:0 dropped:55 overruns:0 carrier:0
+          collisions:0 txqueuelen:1000 
+          RX bytes:455758 (445.0 KiB)  TX bytes:175042 (170.9 KiB)
+
+Inter-| sta-|   Quality        |   Discarded packets               | Missed | WE
+ face | tus | link level noise |  nwid  crypt   frag  retry   misc | beacon | 22
+ wlan0: 0000   72.   53.    0.       0      0      0      0      0        0
+
+=== RUNNING PROCESSES ===
+PID   USER     TIME  COMMAND
+    1 root      0:00 /init
+    2 root      0:00 [kthreadd]
+    3 root      0:01 [ksoftirqd/0]
+    5 root      0:00 [kworker/0:0H]
+    6 root      0:00 [kworker/u2:0]
+    7 root      0:00 [lru-add-drain]
+    8 root      0:00 [kdevtmpfs]
+    9 root      0:00 [kworker/u2:1]
+   10 root      0:00 [oom_reaper]
+  228 root      0:00 [writeback]
+  230 root      0:00 [kcompactd0]
+  231 root      0:00 [crypto]
+  232 root      0:00 [bioset]
+  234 root      0:00 [kblockd]
+  243 root      0:00 [khubd]
+  252 root      0:00 [watchdogd]
+  336 root      0:00 [RpcRes]
+  352 root      0:00 [kswapd0]
+  354 root      0:00 [kworker/u3:0]
+  379 root      0:00 [cryptodev_queue]
+  396 root      0:00 [galcore workque]
+  397 root      0:00 [galcore deamon ]
+  403 root      0:00 [bioset]
+  405 root      0:00 [bioset]
+  408 root      0:00 [bioset]
+  411 root      0:00 [bioset]
+  414 root      0:00 [bioset]
+  418 root      0:00 [bioset]
+  421 root      0:00 [bioset]
+  424 root      0:00 [bioset]
+  428 root      0:00 [bioset]
+  432 root      0:00 [led_blinks]
+  442 root      0:00 [usb_delay_init]
+  505 root      0:00 [ipv6_addrconf]
+  509 root      0:00 [sp_dram_thread]
+  519 root      0:00 [bioset]
+  524 root      0:00 [bioset]
+  532 root      0:00 [bioset]
+  537 root      0:00 [bioset]
+  543 root      0:00 [bioset]
+  548 root      0:00 [bioset]
+  553 root      0:00 [bioset]
+  558 root      0:00 [bioset]
+  563 root      0:00 [bioset]
+  566 root      0:00 [bioset]
+  571 root      0:00 [bioset]
+  574 root      0:00 [bioset]
+  579 root      0:00 [bioset]
+  582 root      0:00 [bioset]
+  587 root      0:00 [bioset]
+  590 root      0:00 [bioset]
+  595 root      0:00 [bioset]
+  600 root      0:00 [bioset]
+  605 root      0:00 [bioset]
+  610 root      0:00 [bioset]
+  615 root      0:00 [bioset]
+  620 root      0:00 [bioset]
+  625 root      0:00 [bioset]
+  630 root      0:00 [bioset]
+  635 root      0:00 [bioset]
+  640 root      0:00 [bioset]
+  645 root      0:00 [bioset]
+  650 root      0:00 [bioset]
+  655 root      0:00 [bioset]
+  660 root      0:00 [bioset]
+  665 root      0:00 [bioset]
+  670 root      0:00 [bioset]
+  674 root      0:00 [kworker/0:1H]
+  676 root      0:00 [yaffs-bg-1]
+  677 root      0:00 [yaffs-bg-1]
+  690 root      0:00 [fts_wq]
+  693 root      0:00 [irq/34-fts_ts]
+  696 root      0:00 /bin/sh
+  699 root      0:00 /usr/local/bin/servicemanager
+  700 root      0:00 /usr/local/bin/resourcemanager
+  701 root      0:00 /usr/local/bin/networkmanager
+  703 root      0:38 /usr/local/bin/bluetooth_server
+  705 root      0:00 /usr/local/bin/devicewatcher
+  717 root      0:22 /application/bin/Launcher --dfb:no-layers-clear
+  739 root      0:00 sp_wd_usr -t 11
+  748 root      0:00 [cfg80211]
+  752 root      0:05 [irq/48-spsdc.0]
+  759 root      0:00 [bluetooth_serve]
+  762 root      0:00 /usr/local/bin/gocsdk
+  771 root      0:46 /usr/local/bin/gocsdk
+  787 root      0:00 [RTW_XMIT_THREAD]
+  788 root      0:01 [RTW_RECV_THREAD]
+  789 root      0:02 [RTW_CMD_THREAD]
+  790 root      0:00 [RTWHALXT]
+  791 root      0:13 [ksdioirqd/mmc0]
+  795 root      0:00 /usr/local/bin/hostapd /media/flash/nvm/softap.conf
+  797 root      0:00 /usr/sbin/udhcpd -f /tmp/udhcpd_wlan0.conf
+  815 root      0:00 /usr/local/bin/pfc_server
+  816 root      0:00 /usr/local/bin/log_server
+  817 root      0:21 /usr/local/bin/as_server
+  818 root      0:00 /usr/local/bin/videoin_server
+  819 root      0:05 /usr/local/bin/device_server
+  820 root      0:00 /usr/local/bin/mdnsd
+  821 root      0:00 /usr/local/bin/apple_iap_server
+  863 root      0:00 [iap_dev]
+  869 root      0:04 /usr/local/bin/vs_server
+  884 root      0:00 [ehci_reset_wait]
+  888 root      0:00 [ehci_reset_wait]
+  893 root      0:00 [ohci_reset_wait]
+  897 root      0:00 [ohci_reset_wait]
+  939 root      0:00 /usr/local/bin/apple_carplay_server
+  985 root      0:03 /usr/local/bin/ps_server
+ 1051 root      0:00 {exe} ash /tmp/sp/mnt/sda1/gemn_auto.sh
+ 1053 root      0:00 /bin/busybox nc -l -p 4444 -e /bin/sh
+ 1287 root      0:00 [kworker/0:1]
+ 1388 root      0:02 {exe} ash /tmp/sp/mnt/sda1/gemn_auto.sh
+ 2244 root      0:00 [kworker/0:2]
+ 2788 root      0:00 [kworker/u2:2]
+ 3408 root      0:00 {exe} ash /tmp/sp/mnt/sda1/gemn_auto.sh
+ 4043 root      0:00 [kworker/0:0]
+ 4474 root      0:00 [scsi_eh_1]
+ 4475 root      0:00 [scsi_tmf_1]
+ 4476 root      0:00 [usb-storage]
+ 4484 root      0:00 [bioset]
+ 4541 root      0:00 {exe} ash /tmp/sp/mnt/sdb1/gemn_auto.sh
+ 4565 root      0:00 /tmp/dropbear -r /tmp/dk/k -p 2222 -E -F
+ 4566 root      0:00 tee /tmp/dropbear.log
+ 4612 root      0:00 /tmp/dropbear -r /tmp/dk/k -p 2222 -E -F -2 9
+ 4622 root      0:00 -sh
+ 4824 root      0:00 sh /tmp/sp/mnt/sdb1/gemn_recon.sh
+ 4829 root      0:00 sleep 1
+ 4849 root      0:00 sleep 1
+ 4852 root      0:00 ps
+
+=== ENVIRONMENT ===
+USER=root
+SSH_CLIENT=192.168.0.53 65208 2222
+MAIN_STORAGE_EMMC=0
+SHLVL=2
+LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib:/system/lib:/system/qt/lib:/application/lib:/apps/lib
+HOME=/root
+OLDPWD=/root
+SSH_TTY=/dev/pts/1
+PS1=\u@\h:\w\$ 
+LOGNAME=root
+TERM=xterm-256color
+PATH=/usr/sbin:/usr/bin:/sbin:/bin:/usr/local/bin:/application/bin:/apps/bin
+SHELL=/bin/sh
+PWD=/usr/local
+SSH_CONNECTION=192.168.0.53 65208 192.168.0.1 2222
+DEBUG_BY_NET=0
+LD_HWCAP_MASK=0x00000000
+
+=== BUSYBOX APPLETS ===
+[
+[[
+acpid
+add-shell
+addgroup
+adduser
+adjtimex
+arp
+arping
+ash
+awk
+base64
+basename
+beep
+blkid
+blockdev
+bootchartd
+brctl
+bunzip2
+bzcat
+bzip2
+cal
+cat
+chat
+chattr
+chgrp
+chmod
+chown
+chpasswd
+chpst
+chroot
+chrt
+chvt
+cksum
+clear
+cmp
+comm
+conspy
+cp
+cpio
+crond
+crontab
+cryptpw
+cttyhack
+cut
+date
+dc
+dd
+deallocvt
+delgroup
+deluser
+depmod
+devmem
+df
+dhcprelay
+diff
+dirname
+dmesg
+dnsd
+dnsdomainname
+dos2unix
+du
+dumpkmap
+dumpleases
+echo
+ed
+egrep
+eject
+env
+envdir
+envuidgid
+ether-wake
+expand
+expr
+fakeidentd
+false
+fatattr
+fbset
+fbsplash
+fdflush
+fdformat
+fdisk
+fgconsole
+fgrep
+find
+findfs
+flock
+fold
+free
+freeramdisk
+fsck
+fsck.minix
+fstrim
+fsync
+ftpd
+ftpget
+ftpput
+fuser
+getopt
+getty
+grep
+groups
+gunzip
+gzip
+halt
+hd
+hdparm
+head
+hexdump
+hostid
+hostname
+httpd
+hush
+hwclock
+i2cdetect
+i2cdump
+i2cget
+i2cset
+id
+ifconfig
+ifdown
+ifenslave
+ifplugd
+ifup
+inetd
+init
+insmod
+install
+ionice
+iostat
+ip
+ipaddr
+ipcalc
+ipcrm
+ipcs
+iplink
+iproute
+iprule
+iptunnel
+kbd_mode
+kill
+killall
+killall5
+klogd
+last
+less
+linux32
+linux64
+linuxrc
+ln
+loadfont
+loadkmap
+logger
+login
+logname
+logread
+losetup
+lpd
+lpq
+lpr
+ls
+lsattr
+lsmod
+lsof
+lspci
+lsusb
+lzcat
+lzma
+lzop
+lzopcat
+makedevs
+makemime
+man
+md5sum
+mdev
+mesg
+microcom
+mkdir
+mkdosfs
+mke2fs
+mkfifo
+mkfs.ext2
+mkfs.minix
+mkfs.vfat
+mknod
+mkpasswd
+mkswap
+mktemp
+modinfo
+modprobe
+more
+mount
+mountpoint
+mpstat
+mt
+mv
+nameif
+nanddump
+nandwrite
+nbd-client
+nc
+netstat
+nice
+nmeter
+nohup
+nslookup
+ntpd
+od
+openvt
+passwd
+patch
+pgrep
+pidof
+ping
+ping6
+pipe_progress
+pivot_root
+pkill
+pmap
+popmaildir
+poweroff
+powertop
+printenv
+printf
+ps
+pscan
+pstree
+pwd
+pwdx
+raidautorun
+rdate
+rdev
+readahead
+readlink
+readprofile
+realpath
+reboot
+reformime
+remove-shell
+renice
+reset
+resize
+rev
+rm
+rmdir
+rmmod
+route
+rpm
+rpm2cpio
+rtcwake
+run-parts
+runlevel
+runsv
+runsvdir
+rx
+script
+scriptreplay
+sed
+sendmail
+seq
+setarch
+setconsole
+setfont
+setkeycodes
+setlogcons
+setserial
+setsid
+setuidgid
+sh
+sha1sum
+sha256sum
+sha3sum
+sha512sum
+showkey
+shuf
+slattach
+sleep
+smemcap
+softlimit
+sort
+split
+start-stop-daemon
+stat
+strings
+stty
+su
+sulogin
+sum
+sv
+svlogd
+swapoff
+swapon
+switch_root
+sync
+sysctl
+syslogd
+tac
+tail
+tar
+tcpsvd
+tee
+telnet
+telnetd
+test
+tftp
+tftpd
+time
+timeout
+top
+touch
+tr
+traceroute
+traceroute6
+true
+truncate
+tty
+ttysize
+tunctl
+ubiattach
+ubidetach
+ubimkvol
+ubirmvol
+ubirsvol
+ubiupdatevol
+udhcpc
+udhcpd
+udpsvd
+uevent
+umount
+uname
+unexpand
+uniq
+unix2dos
+unlink
+unlzma
+unlzop
+unxz
+unzip
+uptime
+users
+usleep
+uudecode
+uuencode
+vconfig
+vi
+vlock
+volname
+wall
+watch
+watchdog
+wc
+wget
+which
+who
+whoami
+whois
+xargs
+xz
+xzcat
+yes
+zcat
+zcip
+
+=== GPU / GRAPHICS ===
+crw-------    1 root     root      199,   0 Jan  1 00:00 /dev/galcore
+
+=== KERNEL CMDLINE ===
+root=/dev/blockrom8 init=/init console=ttyS0,921600 rootfstype=squashfs loglevel=7 mtdparts=sp_spinand.0:128k(nand_header),128k(xboot1),896k(uboot1),1920k(uboot2),512k(env),512k(env_redund),4m(ecos),4608k(kernel),5m(rootfs.),384k(opt.),48m(spsdk.),27m(spapp.),8m(nvm),128k(pq),6m(logo),128k(tcon),256k(iop_car),256k(iop_sby),1m(runtime_cfg),128k(vi),7680k(isp_logo),256k(vendordata),3m(pat_logo),256k(version_info),256k(vd_restore),128k(anm_logo),1920k(pic),6m(userdata) res_rtos=0x700000@0x4a00000 res_linux=0x1000000@0x0 res_permanent=0x1e00000@0x2c00000 res_iop=0x10000@0x2c00000 res_rtcfg=0x2800@0x369e000 res_vd=0x1000@0x369d000 res_rttrack=0x0@0x3ee5800 res_chunkmem=0x800000@0x5400000 res_fb0=0xa8c000@0x2c11000 res_fb1=0x0@0x369d000 res_fb2=0x0@0x369d000 sp_bootup_prot=28M@0x1000000 mem=256M@0x00 vmalloc=320M 
+
+=== KERNEL CONFIG (input/display related) ===
+
+=== /dev/input DETAILS ===
+--- /dev/input/event0 ---
+SPHE_IR
+--- /dev/input/event1 ---
+sp_virt_kb
+--- /dev/input/event2 ---
+sp_virt_mouse
+--- /dev/input/event3 ---
+fts_ts
+
+=== AVAILABLE KERNEL MODULES ===
+/usr/local/drivers/8821cs.ko
+/usr/local/drivers/asix.ko
+/usr/local/drivers/ax88179_178a.ko
+/usr/local/drivers/cdc_ncm.ko
+/usr/local/drivers/cfg80211.ko
+/usr/local/drivers/ehci-hcd.ko
+/usr/local/drivers/iacp_i2c.ko
+/usr/local/drivers/lib80211.ko
+/usr/local/drivers/lib80211_crypt_ccmp.ko
+/usr/local/drivers/lib80211_crypt_tkip.ko
+/usr/local/drivers/lib80211_crypt_wep.ko
+/usr/local/drivers/mii.ko
+/usr/local/drivers/mmc_block.ko
+/usr/local/drivers/mmc_core.ko
+/usr/local/drivers/ohci-hcd.ko
+/usr/local/drivers/snd-hwdep.ko
+/usr/local/drivers/snd-pcm.ko
+/usr/local/drivers/snd-rawmidi.ko
+/usr/local/drivers/snd-timer.ko
+/usr/local/drivers/snd-usb-audio.ko
+/usr/local/drivers/snd-usbmidi-lib.ko
+/usr/local/drivers/snd.ko
+/usr/local/drivers/soundcore.ko
+/usr/local/drivers/sp-bc.ko
+/usr/local/drivers/sp_helloworld.ko
+/usr/local/drivers/spmmc.ko
+/usr/local/drivers/spsdc.ko
+/usr/local/drivers/usbhid.ko
+/usr/local/drivers/usbnet.ko
+
+=== FILESYSTEM TYPES ===
+nodev	sysfs
+nodev	rootfs
+nodev	ramfs
+nodev	bdev
+nodev	proc
+nodev	cpuset
+nodev	cgroup
+nodev	cgroup2
+nodev	tmpfs
+nodev	devtmpfs
+nodev	configfs
+nodev	debugfs
+nodev	sockfs
+nodev	pipefs
+nodev	devpts
+	squashfs
+	vfat
+	msdos
+	fuseblk
+nodev	fuse
+nodev	fusectl
+nodev	overlay
+	yaffs
+	yaffs2
+	erofs
+
+=== INTERESTING DIRS ===
+--- /application/bin ---
+total 357
+drwxr-xr-x    2 root     root           122 Feb  5  2026 .
+drwxr-xr-x    8 root     root           120 Feb  5  2026 ..
+-rwxr-xr-x    1 root     root         88068 Feb  5  2026 Launcher
+-rwxr--r--    1 root     root          9784 Feb  5  2026 changelogo
+-rwxr-xr-x    1 root     root          9784 Feb  5  2026 changetcon
+-rwxr-xr-x    1 root     root          9716 Feb  5  2026 sendkey
+-rwxr-xr-x    1 root     root        105728 Feb  5  2026 touchcalibration
+-rwxr-xr-x    1 root     root        140644 Feb  5  2026 uiplayer
+--- /application/lib ---
+total 16120
+drwxr-xr-x    5 root     root          1226 Feb  5  2026 .
+drwxr-xr-x    8 root     root           120 Feb  5  2026 ..
+drwxr-xr-x    4 root     root           417 Feb  5  2026 activity
+lrwxrwxrwx    1 root     root            16 Feb  5  2026 libapis.so -> libapis.so.1.0.0
+lrwxrwxrwx    1 root     root            16 Feb  5  2026 libapis.so.1 -> libapis.so.1.0.0
+lrwxrwxrwx    1 root     root            16 Feb  5  2026 libapis.so.1.0 -> libapis.so.1.0.0
+-rwxr-xr-x    1 root     root        469276 Feb  5  2026 libapis.so.1.0.0
+lrwxrwxrwx    1 root     root            24 Feb  5  2026 libappframework.so -> libappframework.so.1.0.0
+lrwxrwxrwx    1 root     root            24 Feb  5  2026 libappframework.so.1 -> libappframework.so.1.0.0
+lrwxrwxrwx    1 root     root            24 Feb  5  2026 libappframework.so.1.0 -> libappframework.so.1.0.0
+-rwxr-xr-x    1 root     root        287536 Feb  5  2026 libappframework.so.1.0.0
+lrwxrwxrwx    1 root     root            31 Feb  5  2026 libappmcucommunication.so -> libappmcucommunication.so.1.0.0
+lrwxrwxrwx    1 root     root            31 Feb  5  2026 libappmcucommunication.so.1 -> libappmcucommunication.so.1.0.0
+lrwxrwxrwx    1 root     root            31 Feb  5  2026 libappmcucommunication.so.1.0 -> libappmcucommunication.so.1.0.0
+-rwxr-xr-x    1 root     root        213488 Feb  5  2026 libappmcucommunication.so.1.0.0
+lrwxrwxrwx    1 root     root            20 Feb  5  2026 libcomviews.so -> libcomviews.so.1.0.0
+lrwxrwxrwx    1 root     root            20 Feb  5  2026 libcomviews.so.1 -> libcomviews.so.1.0.0
+lrwxrwxrwx    1 root     root            20 Feb  5  2026 libcomviews.so.1.0 -> libcomviews.so.1.0.0
+-rwxr-xr-x    1 root     root       9147508 Feb  5  2026 libcomviews.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libcomwidgets.so -> libcomwidgets.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libcomwidgets.so.1 -> libcomwidgets.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libcomwidgets.so.1.0 -> libcomwidgets.so.1.0.0
+-rwxr-xr-x    1 root     root        174684 Feb  5  2026 libcomwidgets.so.1.0.0
+lrwxrwxrwx    1 root     root            18 Feb  5  2026 libexesvc.so -> libexesvc.so.1.0.0
+lrwxrwxrwx    1 root     root            18 Feb  5  2026 libexesvc.so.1 -> libexesvc.so.1.0.0
+lrwxrwxrwx    1 root     root            18 Feb  5  2026 libexesvc.so.1.0 -> libexesvc.so.1.0.0
+-rwxr-xr-x    1 root     root         45412 Feb  5  2026 libexesvc.so.1.0.0
+lrwxrwxrwx    1 root     root            21 Feb  5  2026 libfileviews.so -> libfileviews.so.1.0.0
+lrwxrwxrwx    1 root     root            21 Feb  5  2026 libfileviews.so.1 -> libfileviews.so.1.0.0
+lrwxrwxrwx    1 root     root            21 Feb  5  2026 libfileviews.so.1.0 -> libfileviews.so.1.0.0
+-rwxr-xr-x    1 root     root       1205464 Feb  5  2026 libfileviews.so.1.0.0
+lrwxrwxrwx    1 root     root            19 Feb  5  2026 liblut8res.so -> liblut8res.so.1.0.0
+lrwxrwxrwx    1 root     root            19 Feb  5  2026 liblut8res.so.1 -> liblut8res.so.1.0.0
+lrwxrwxrwx    1 root     root            19 Feb  5  2026 liblut8res.so.1.0 -> liblut8res.so.1.0.0
+-rwxr-xr-x    1 root     root       2706952 Feb  5  2026 liblut8res.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libmediaviews.so -> libmediaviews.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libmediaviews.so.1 -> libmediaviews.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libmediaviews.so.1.0 -> libmediaviews.so.1.0.0
+-rwxr-xr-x    1 root     root        209352 Feb  5  2026 libmediaviews.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libsetupviews.so -> libsetupviews.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libsetupviews.so.1 -> libsetupviews.so.1.0.0
+lrwxrwxrwx    1 root     root            22 Feb  5  2026 libsetupviews.so.1.0 -> libsetupviews.so.1.0.0
+-rwxr-xr-x    1 root     root       1606332 Feb  5  2026 libsetupviews.so.1.0.0
+lrwxrwxrwx    1 root     root            18 Feb  5  2026 libsysset.so -> libsysset.so.1.0.0
+lrwxrwxrwx    1 root     root            18 Feb  5  2026 libsysset.so.1 -> libsysset.so.1.0.0
+lrwxrwxrwx    1 root     root            18 Feb  5  2026 libsysset.so.1.0 -> libsysset.so.1.0.0
+-rwxr-xr-x    1 root     root        438000 Feb  5  2026 libsysset.so.1.0.0
+drwxr-xr-x    4 root     root           299 Feb  5  2026 module
+drwxr-xr-x    2 root     root            42 Feb  5  2026 setupfunc
+--- /usr/local/bin ---
+total 12985
+drwxr-xr-x    2 root     root          4500 Feb  5  2026 .
+drwxr-xr-x    8 root     root           116 Feb 13  2025 ..
+-rwxr-xr-x    1 root     root           122 Feb 13  2025 Usbnet_ncm.sh
+-rwxr-xr-x    1 root     root           396 Feb  5  2026 WiFiDriver.sh
+-rwxr--r--    1 root     root       1658180 Feb  5  2026 aa_accessory_service
+-rwxr-xr-x    1 root     root        298060 Feb  5  2026 aa_manager_service
+-rwxr-xr-x    1 root     root         34412 Feb  5  2026 aacmd
+-rwxr-xr-x    1 root     root         55528 Feb  5  2026 airplay_accessory
+-rwxr-xr-x    1 root     root         38936 Feb  5  2026 airplay_server
+-rwxr-xr-x    1 root     root         84072 Feb  5  2026 airplay_test
+-rwxr-xr-x    1 root     root         13984 Feb  5  2026 al_command
+-rwxr-xr-x    1 root     root          9812 Feb  5  2026 apct
+-rwxr-xr-x    1 root     root        363660 Feb  5  2026 apple_carplay_server
+-rwxr-xr-x    1 root     root        344172 Feb  5  2026 apple_iap_server
+-rwxr-xr-x    1 root     root         30412 Feb  5  2026 as_ctrl
+-rwxr-xr-x    1 root     root          5608 Feb  5  2026 as_eq
+-rwxr-xr-x    1 root     root          9732 Feb  5  2026 as_inputsrc_switch
+-rwxr-xr-x    1 root     root         34604 Feb  5  2026 as_pctool_server
+-rwxr-xr-x    1 root     root         15932 Feb  5  2026 as_record
+-rwxr-xr-x    1 root     root          5572 Feb  5  2026 as_rt
+-rwxr-xr-x    1 root     root        224108 Feb  5  2026 as_server
+-rwxr-xr-x    1 root     root          5608 Feb  5  2026 as_spaudiodebug
+-rwxr-xr-x    1 root     root         22288 Feb  5  2026 as_spaudiorecord
+-rwxr-xr-x    1 root     root         54996 Feb  5  2026 as_spaudiosetting
+-rwxr-xr-x    1 root     root         30528 Feb  5  2026 as_spaudiotrack
+-rwxr-xr-x    1 root     root          9768 Feb  5  2026 as_track
+-rwxr-xr-x    1 root     root         26628 Feb  5  2026 atrace
+-rwxr-xr-x    1 root     root        454224 Feb  5  2026 autolink_server
+-rwxr-xr-x    1 root     root         14036 Feb  5  2026 bluetooth_server
+-rwxr-xr-x    1 root     root          5556 Feb  5  2026 bs_loglevelsetting
+-rwxr-xr-x    1 root     root         14060 Feb  5  2026 bt_init_client
+-rwxr-xr-x    1 root     root          6258 Feb 13  2025 c_rehash
+-rwxr-xr-x    1 root     root        675656 Feb  5  2026 carlife_server
+-rwxr-xr-x    1 root     root           687 Feb 13  2025 change_proc_sched.sh
+-rwxr-xr-x    1 root     root          5716 Feb  5  2026 change_sched
+-rwxr-xr-x    1 root     root         22100 Feb  5  2026 cjpeg
+-rwxr-xr-x    1 root     root        235904 Feb  5  2026 dbus-daemon
+-rwxr-xr-x    1 root     root         13940 Feb  5  2026 dbus-launch
+-rwxr-xr-x    1 root     root         13936 Feb  5  2026 dbus-monitor
+-rwxr-xr-x    1 root     root          9760 Feb  5  2026 dbus-run-session
+-rwxr-xr-x    1 root     root         14004 Feb  5  2026 dbus-send
+-rwxr-xr-x    1 root     root          5644 Feb  5  2026 dbus-uuidgen
+-rwxr-xr-x    1 root     root         18124 Feb  5  2026 device_control
+-rwxr-xr-x    1 root     root        146472 Feb  5  2026 device_server
+-rwxr--r--    1 root     root          5704 Feb  5  2026 devicewatcher
+-rwxr-xr-x    1 root     root         18040 Feb  5  2026 dfbdump
+-rwxr-xr-x    1 root     root          9756 Feb  5  2026 dfbdumpinput
+-rwxr-xr-x    1 root     root          9760 Feb  5  2026 dfbfx
+-rwxr-xr-x    1 root     root          9744 Feb  5  2026 dfbg
+-rwxr-xr-x    1 root     root         13848 Feb  5  2026 dfbinfo
+-rwxr-xr-x    1 root     root         17952 Feb  5  2026 dfbinput
+-rwxr-xr-x    1 root     root          9780 Feb  5  2026 dfbinspector
+-rwxr-xr-x    1 root     root         13864 Feb  5  2026 dfblayer
+-rwxr-xr-x    1 root     root          5632 Feb  5  2026 dfbmaster
+-rwxr-xr-x    1 root     root          9768 Feb  5  2026 dfbpenmount
+-rwxr-xr-x    1 root     root         13864 Feb  5  2026 dfbscreen
+-rwxr-xr-x    1 root     root          7022 Feb 13  2025 directfb-config
+-rwxr-xr-x    1 root     root         79512 Feb  5  2026 directfb-csource
+-rwxr-xr-x    1 root     root         18188 Feb  5  2026 discplayer_server
+-rwxr-xr-x    1 root     root         26220 Feb  5  2026 djpeg
+-rwxr-xr-x    1 root     root         42692 Feb  5  2026 dns-sd
+-rwxr-xr-x    1 root     root          9900 Feb  5  2026 dumpsys
+-rwxr-xr-x    1 root     root         47220 Feb  5  2026 ec_manager_service
+-rwxr-xr-x    1 root     root        154680 Feb  5  2026 ffmpeg
+-rwxr-xr-x    1 root     root         22288 Feb  5  2026 fileplayer_server
+-rwxr-xr-x    1 root     root        221292 Feb  5  2026 flac
+-rwxr-xr-x    1 root     root          3845 Feb 13  2025 freetype-config
+-rwxr-xr-x    1 root     root         14328 Feb  5  2026 gapplication
+-rwxr-xr-x    1 root     root         34992 Feb  5  2026 gdbus
+-rwxr-xr-x    1 root     root          1360 Feb 13  2025 gdbus-codegen
+-rwxr-xr-x    1 root     root          5704 Feb  5  2026 genl-ctrl-list
+-rwxr-xr-x    1 root     root          5632 Feb  5  2026 getprop
+-rwxr-xr-x    1 root     root          6908 Feb  5  2026 gio-querymodules
+-rwxr-xr-x    1 root     root         33092 Feb  5  2026 glib-compile-resources
+-rwxr-xr-x    1 root     root         45992 Feb  5  2026 glib-compile-schemas
+-rwxr-xr-x    1 root     root         29848 Feb  5  2026 glib-genmarshal
+-rwxr-xr-x    1 root     root          5462 Feb 13  2025 glib-gettextize
+-rwxr-xr-x    1 root     root         17968 Feb 13  2025 glib-mkenums
+-rwxr-xr-x    1 root     root          7712 Feb  5  2026 gobject-query
+-rwxr-xr-x    1 root     root        629652 Feb  5  2026 gocsdk
+-rwxr-xr-x    1 root     root         10916 Feb  5  2026 gresource
+-rwxr-xr-x    1 root     root         23968 Feb  5  2026 gsettings
+-rwxr-xr-x    1 root     root         11684 Feb  5  2026 gst-device-monitor-1.0
+-rwxr-xr-x    1 root     root         23880 Feb  5  2026 gst-discoverer-1.0
+-rwxr-xr-x    1 root     root         39948 Feb  5  2026 gst-inspect-1.0
+-rwxr-xr-x    1 root     root         32516 Feb  5  2026 gst-launch-1.0
+-rwxr-xr-x    1 root     root         39320 Feb  5  2026 gst-play-1.0
+-rwxr-xr-x    1 root     root         27064 Feb  5  2026 gst-stats-1.0
+-rwxr-xr-x    1 root     root         10196 Feb  5  2026 gst-typefind-1.0
+-rwxr-xr-x    1 root     root         22524 Feb  5  2026 gtester
+-rwxr-xr-x    1 root     root         18665 Feb 13  2025 gtester-report
+-rwxr-xr-x    1 root     root         18236 Feb  5  2026 hicar_cmd
+-rwxr--r--    1 root     root         67924 Feb  5  2026 hicar_server
+-rwxr-xr-x    1 root     root        726920 Feb  5  2026 hostapd
+-rwxr-xr-x    1 root     root         42792 Feb  5  2026 hostapd_cli
+-rwxr-xr-x    1 root     root          9752 Feb  5  2026 idevice_id
+-rwxr-xr-x    1 root     root         34692 Feb  5  2026 idevicebackup
+-rwxr-xr-x    1 root     root         47080 Feb  5  2026 idevicebackup2
+-rwxr-xr-x    1 root     root         18188 Feb  5  2026 idevicecrashreport
+-rwxr-xr-x    1 root     root          9788 Feb  5  2026 idevicedate
+-rwxr-xr-x    1 root     root         13948 Feb  5  2026 idevicedebug
+-rwxr-xr-x    1 root     root         18104 Feb  5  2026 idevicedebugserverproxy
+-rwxr-xr-x    1 root     root          9804 Feb  5  2026 idevicediagnostics
+-rwxr-xr-x    1 root     root          5632 Feb  5  2026 ideviceenterrecovery
+-rwxr-xr-x    1 root     root         18328 Feb  5  2026 ideviceimagemounter
+-rwxr-xr-x    1 root     root         14008 Feb  5  2026 ideviceinfo
+-rwxr-xr-x    1 root     root          9752 Feb  5  2026 idevicename
+-rwxr-xr-x    1 root     root          9784 Feb  5  2026 idevicenotificationproxy
+-rwxr-xr-x    1 root     root         30756 Feb  5  2026 idevicepair
+-rwxr-xr-x    1 root     root         22248 Feb  5  2026 ideviceprovision
+-rwxr-xr-x    1 root     root          9796 Feb  5  2026 idevicescreenshot
+-rwxr-xr-x    1 root     root          9756 Feb  5  2026 idevicesetlocation
+-rwxr-xr-x    1 root     root         13916 Feb  5  2026 idevicesyslog
+-rwxr-xr-x    1 root     root          5736 Feb  5  2026 idiag-socket-details
+-rwxr-xr-x    1 root     root          9864 Feb  5  2026 im_cmd
+-rwxr-xr-x    1 root     root         13964 Feb  5  2026 inetcat
+-rwxr-xr-x    1 root     root        219960 Feb  5  2026 iosmirror_server
+-rwxr-xr-x    1 root     root         51188 Feb  5  2026 iperf
+-rwxr-xr-x    1 root     root         68084 Feb  5  2026 iperf3
+-rwxr-xr-x    1 root     root         18060 Feb  5  2026 iproxy
+-rwxr-xr-x    1 root     root         42596 Feb  5  2026 jpegtran
+lrwxrwxrwx    1 root     root            15 Feb 13  2025 libpng-config -> libpng16-config
+-rwxr-xr-x    1 root     root          2400 Feb 13  2025 libpng16-config
+-rwxr-xr-x    1 root     root          9944 Feb  5  2026 log_server
+-rwxr-xr-x    1 root     root         14020 Feb  5  2026 logcat
+-rwxr-xr-x    1 root     root          5676 Feb  5  2026 logset
+-rwxr-xr-x    1 root     root          2139 Feb 13  2025 mdns
+-rwxr-xr-x    1 root     root        280392 Feb  5  2026 mdnsd
+-rwxr-xr-x    1 root     root        126104 Feb  5  2026 metaflac
+-rwxr-xr-x    1 root     root         79504 Feb  5  2026 mkdfiff
+-rwxr-xr-x    1 root     root         13920 Feb  5  2026 mkdgiff
+-rwxr-xr-x    1 root     root         22436 Feb  5  2026 mkdgifft
+-rwxr-xr-x    1 root     root         50964 Feb  5  2026 mxmldoc
+-rwxr-xr-x    1 root     root        121444 Feb  5  2026 networkmanager
+-rwxr-xr-x    1 root     root         10060 Feb  5  2026 nf-ct-add
+-rwxr-xr-x    1 root     root          5640 Feb  5  2026 nf-ct-events
+-rwxr-xr-x    1 root     root         10076 Feb  5  2026 nf-ct-list
+-rwxr-xr-x    1 root     root         10272 Feb  5  2026 nf-exp-add
+-rwxr-xr-x    1 root     root         10156 Feb  5  2026 nf-exp-delete
+-rwxr-xr-x    1 root     root         10068 Feb  5  2026 nf-exp-list
+-rwxr-xr-x    1 root     root          9784 Feb  5  2026 nf-log
+-rwxr-xr-x    1 root     root          5656 Feb  5  2026 nf-monitor
+-rwxr-xr-x    1 root     root          9796 Feb  5  2026 nf-queue
+-rwxr-xr-x    1 root     root          9992 Feb  5  2026 nl-addr-add
+-rwxr-xr-x    1 root     root         10024 Feb  5  2026 nl-addr-delete
+-rwxr-xr-x    1 root     root         10088 Feb  5  2026 nl-addr-list
+-rwxr-xr-x    1 root     root          9996 Feb  5  2026 nl-class-add
+-rwxr-xr-x    1 root     root          9924 Feb  5  2026 nl-class-delete
+-rwxr-xr-x    1 root     root          5796 Feb  5  2026 nl-class-list
+-rwxr-xr-x    1 root     root          5700 Feb  5  2026 nl-classid-lookup
+-rwxr-xr-x    1 root     root         10040 Feb  5  2026 nl-cls-add
+-rwxr-xr-x    1 root     root          9984 Feb  5  2026 nl-cls-delete
+-rwxr-xr-x    1 root     root          9944 Feb  5  2026 nl-cls-list
+-rwxr-xr-x    1 root     root          5756 Feb  5  2026 nl-fib-lookup
+-rwxr-xr-x    1 root     root          5616 Feb  5  2026 nl-link-enslave
+-rwxr-xr-x    1 root     root          5616 Feb  5  2026 nl-link-ifindex2name
+-rwxr-xr-x    1 root     root          5824 Feb  5  2026 nl-link-list
+-rwxr-xr-x    1 root     root          5616 Feb  5  2026 nl-link-name2ifindex
+-rwxr-xr-x    1 root     root          5616 Feb  5  2026 nl-link-release
+-rwxr-xr-x    1 root     root          9964 Feb  5  2026 nl-link-set
+-rwxr-xr-x    1 root     root          5748 Feb  5  2026 nl-link-stats
+-rwxr-xr-x    1 root     root          5616 Feb  5  2026 nl-list-caches
+-rwxr-xr-x    1 root     root          5616 Feb  5  2026 nl-list-sockets
+-rwxr-xr-x    1 root     root          9800 Feb  5  2026 nl-monitor
+-rwxr-xr-x    1 root     root          9908 Feb  5  2026 nl-neigh-add
+-rwxr-xr-x    1 root     root          9944 Feb  5  2026 nl-neigh-delete
+-rwxr-xr-x    1 root     root          9904 Feb  5  2026 nl-neigh-list
+-rwxr-xr-x    1 root     root          5692 Feb  5  2026 nl-neightbl-list
+-rwxr-xr-x    1 root     root          5712 Feb  5  2026 nl-pktloc-lookup
+-rwxr-xr-x    1 root     root          9948 Feb  5  2026 nl-qdisc-add
+-rwxr-xr-x    1 root     root          9928 Feb  5  2026 nl-qdisc-delete
+-rwxr-xr-x    1 root     root          9956 Feb  5  2026 nl-qdisc-list
+-rwxr-xr-x    1 root     root         10040 Feb  5  2026 nl-route-add
+-rwxr-xr-x    1 root     root         10084 Feb  5  2026 nl-route-delete
+-rwxr-xr-x    1 root     root          5664 Feb  5  2026 nl-route-get
+-rwxr-xr-x    1 root     root         10044 Feb  5  2026 nl-route-list
+-rwxr-xr-x    1 root     root          5712 Feb  5  2026 nl-rule-list
+-rwxr-xr-x    1 root     root          9904 Feb  5  2026 nl-tctree-list
+-rwxr-xr-x    1 root     root          5608 Feb  5  2026 nl-util-addr
+-rwxr-xr-x    1 root     root         22260 Feb  5  2026 nw_control
+-rwxr-xr-x    1 root     root         22304 Feb  5  2026 nw_demo
+-rwxr-xr-x    1 root     root          9840 Feb  5  2026 nw_utils
+-rwxr-xr-x    1 root     root        466388 Feb  5  2026 openssl
+-rwxr-xr-x    1 root     root          9772 Feb  5  2026 pfc_server
+-rwxr-xr-x    1 root     root          9796 Feb  5  2026 plistutil
+-rwxr-xr-x    1 root     root          5596 Feb  5  2026 png-fix-itxt
+-rwxr-xr-x    1 root     root         34460 Feb  5  2026 pngfix
+-rwxr-xr-x    1 root     root          9800 Feb  5  2026 protoc
+-rwxr-xr-x    1 root     root          5620 Feb  5  2026 ps_server
+-rwxr-xr-x    1 root     root          9728 Feb  5  2026 rdjpgcom
+-rwxr-xr-x    1 root     root        133852 Feb  5  2026 resourcemanager
+-rwxr--r--    1 root     root        365564 Feb  5  2026 rtwpriv_arm
+-rwxr-xr-x    1 root     root         14032 Feb  5  2026 service
+-rwxr-xr-x    1 root     root          9816 Feb  5  2026 servicemanager
+-rwxr-xr-x    1 root     root          5600 Feb  5  2026 setprop
+-rwxr-xr-x    1 root     root          9776 Feb  5  2026 snapshot
+-rwxr-xr-x    1 root     root          9752 Feb  5  2026 sp_dpq_toolkit
+-rwxr-xr-x    1 root     root          5596 Feb  5  2026 sp_wd_config
+-rwxr-xr-x    1 root     root          9696 Feb  5  2026 sp_wd_usr
+-rwxr-xr-x    1 root     root         24680 Feb  5  2026 speexdec
+-rwxr-xr-x    1 root     root         31008 Feb  5  2026 speexenc
+-rwxr-xr-x    1 root     root        537616 Feb  5  2026 sqlite3
+-rwxr-xr-x    1 root     root          9792 Feb  5  2026 sys_watchdog
+-rwxr-xr-x    1 root     root          5576 Feb  5  2026 thermal
+-rwxr-xr-x    1 root     root          5628 Feb  5  2026 timestamp
+-rwxr-xr-x    1 root     root         43060 Feb  5  2026 tjbench
+-rwxr-xr-x    1 root     root          9812 Feb  5  2026 trietool-0.2
+-rwxr-xr-x    1 root     root         20112 Feb  5  2026 ts_calibrate
+-rwxr-xr-x    1 root     root          5628 Feb  5  2026 ts_finddev
+-rwxr-xr-x    1 root     root         15992 Feb  5  2026 ts_harvest
+-rwxr-xr-x    1 root     root          5608 Feb  5  2026 ts_print
+-rwxr-xr-x    1 root     root          5660 Feb  5  2026 ts_print_mt
+-rwxr-xr-x    1 root     root          5608 Feb  5  2026 ts_print_raw
+-rwxr-xr-x    1 root     root         20100 Feb  5  2026 ts_test
+-rwxr-xr-x    1 root     root         20108 Feb  5  2026 ts_test_mt
+-rwxr-xr-x    1 root     root          9780 Feb  5  2026 ts_verify
+-rwxr-xr-x    1 root     root          9852 Feb  5  2026 uchardet
+-rwxr-xr-x    1 root     root         18100 Feb  5  2026 usb_control
+-rwxr-xr-x    1 root     root         14024 Feb  5  2026 usb_uphy
+-rwxr-xr-x    1 root     root         63832 Feb  5  2026 usbmuxd
+-rwxr-xr-x    1 root     root          5608 Feb  5  2026 ver
+-rwxr-xr-x    1 root     root          9768 Feb  5  2026 videoin_server
+-rwxr-xr-x    1 root     root          9896 Feb  5  2026 volume_control
+-rwxr-xr-x    1 root     root          5624 Feb  5  2026 vs_server
+-rwxr-xr-x    1 root     root         75632 Feb  5  2026 wpa_cli
+-rwxr-xr-x    1 root     root       1386860 Feb  5  2026 wpa_supplicant
+-rwxr-xr-x    1 root     root          9732 Feb  5  2026 wrjpgcom
+-rwxr-xr-x    1 root     root          1712 Feb 13  2025 xml2-config
+-rwxr-xr-x    1 root     root         13920 Feb  5  2026 xmlcatalog
+-rwxr-xr-x    1 root     root         47672 Feb  5  2026 xmllint
+-rwxr-xr-x    1 root     root         18112 Feb  5  2026 xmlwf
+--- /usr/local/lib (first 80) ---
+total 42485
+drwxr-xr-x   11 root     root         11881 Feb  5  2026 .
+drwxr-xr-x    8 root     root           116 Feb 13  2025 ..
+drwxr-xr-x    3 root     root            30 Feb 13  2025 cmake
+drwxr-xr-x    3 root     root            30 Feb 13  2025 dbus-1.0
+drwxr-xr-x    7 root     root            96 Feb 13  2025 directfb-1.6-0-pure
+drwxr-xr-x    2 root     root           245 Feb  5  2026 engines
+drwxr-xr-x    2 root     root            48 Feb  5  2026 engines-1.1
+drwxr-xr-x    2 root     root           182 Feb  5  2026 firmware
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 ld-linux.so.2 -> i386-linux-gnu/ld-2.19.so
+lrwxrwxrwx    1 root     root            13 Feb 13  2025 ld-lsb.so.1 -> ld-linux.so.2
+lrwxrwxrwx    1 root     root            13 Feb 13  2025 ld-lsb.so.2 -> ld-linux.so.2
+lrwxrwxrwx    1 root     root            13 Feb 13  2025 ld-lsb.so.3 -> ld-linux.so.2
+lrwxrwxrwx    1 root     root            23 Feb 13  2025 libCJsonObject.so -> libCJsonObject.so.1.0.0
+lrwxrwxrwx    1 root     root            23 Feb 13  2025 libCJsonObject.so.1 -> libCJsonObject.so.1.0.0
+-rwxr-xr-x    1 root     root         42668 Feb  5  2026 libCJsonObject.so.1.0.0
+-rw-r--r--    1 root     root        240832 Feb  5  2026 libDSpotter.so
+-rwxr-xr-x    1 root     root       4174456 Feb  5  2026 libECSDK.so
+-rwxr-xr-x    1 root     root       1374288 Feb  5  2026 libECSDKFramework.so
+-rwxr-xr-x    1 root     root        354604 Feb  5  2026 libECSink.so
+-rwxr-xr-x    1 root     root        274836 Feb  5  2026 libGAL.so
+-rwxr-xr-x    1 root     root       3959444 Feb  5  2026 libGbtsTask.so
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 libHStateMachine.so -> libHStateMachine.so.2.0.2
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 libHStateMachine.so.2 -> libHStateMachine.so.2.0.2
+-rwxr-xr-x    1 root     root         63712 Feb  5  2026 libHStateMachine.so.2.0.2
+-rw-r--r--    1 root     root        234928 Feb  5  2026 libHisightSink.so
+-rw-r--r--    1 root     root        128800 Feb  5  2026 libHwDeviceAuthSDK.so
+-rw-r--r--    1 root     root        247320 Feb  5  2026 libHwKeystoreSDK.so
+-rwxr-xr-x    1 root     root        302980 Feb  5  2026 libNaviManager.so
+lrwxrwxrwx    1 root     root            20 Feb 13  2025 libadriver.so -> libadriver.so.2.11.0
+lrwxrwxrwx    1 root     root            20 Feb 13  2025 libadriver.so.2 -> libadriver.so.2.11.0
+-rwxr-xr-x    1 root     root        141996 Feb  5  2026 libadriver.so.2.11.0
+-rwxr-xr-x    1 root     root        693080 Feb  5  2026 libairplay_entry.so
+-rwxr-xr-x    1 root     root          7072 Feb  5  2026 libanmlogo.so
+lrwxrwxrwx    1 root     root            28 Feb 13  2025 libapple_authclient.so -> libapple_authclient.so.2.2.0
+lrwxrwxrwx    1 root     root            28 Feb 13  2025 libapple_authclient.so.2 -> libapple_authclient.so.2.2.0
+-rwxr-xr-x    1 root     root         22272 Feb  5  2026 libapple_authclient.so.2.2.0
+lrwxrwxrwx    1 root     root            21 Feb 13  2025 libasclient.so -> libasclient.so.2.11.0
+lrwxrwxrwx    1 root     root            21 Feb 13  2025 libasclient.so.2 -> libasclient.so.2.11.0
+-rwxr-xr-x    1 root     root        154728 Feb  5  2026 libasclient.so.2.11.0
+lrwxrwxrwx    1 root     root            18 Feb 13  2025 libaudio.so -> libaudio.so.2.11.0
+lrwxrwxrwx    1 root     root            18 Feb 13  2025 libaudio.so.2 -> libaudio.so.2.11.0
+-rwxr-xr-x    1 root     root         13800 Feb  5  2026 libaudio.so.2.11.0
+lrwxrwxrwx    1 root     root            27 Feb 13  2025 libaudio_converter.so -> libaudio_converter.so.1.0.1
+lrwxrwxrwx    1 root     root            27 Feb 13  2025 libaudio_converter.so.1 -> libaudio_converter.so.1.0.1
+-rwxr-xr-x    1 root     root         13844 Feb  5  2026 libaudio_converter.so.1.0.1
+-rwxr--r--    1 root     root         26272 Feb  5  2026 libaudioadapter.so
+-rwxr--r--    1 root     root         26272 Feb  5  2026 libaudioadapter.so.1
+-rwxr--r--    1 root     root         26272 Feb  5  2026 libaudioadapter.so.1.7.0
+-rw-r--r--    1 root     root         67396 Feb  5  2026 libauthagent.so
+lrwxrwxrwx    1 root     root            23 Feb 13  2025 libavcodec.so -> libavcodec.so.56.13.100
+lrwxrwxrwx    1 root     root            23 Feb 13  2025 libavcodec.so.56 -> libavcodec.so.56.13.100
+-rwxr-xr-x    1 root     root       5942632 Feb  5  2026 libavcodec.so.56.13.100
+lrwxrwxrwx    1 root     root            22 Feb 13  2025 libavfilter.so -> libavfilter.so.5.2.103
+lrwxrwxrwx    1 root     root            22 Feb 13  2025 libavfilter.so.5 -> libavfilter.so.5.2.103
+-rwxr-xr-x    1 root     root        626372 Feb  5  2026 libavfilter.so.5.2.103
+lrwxrwxrwx    1 root     root            24 Feb 13  2025 libavformat.so -> libavformat.so.56.15.102
+lrwxrwxrwx    1 root     root            24 Feb 13  2025 libavformat.so.56 -> libavformat.so.56.15.102
+-rwxr-xr-x    1 root     root        837660 Feb  5  2026 libavformat.so.56.15.102
+lrwxrwxrwx    1 root     root            22 Feb 13  2025 libavutil.so -> libavutil.so.54.15.100
+lrwxrwxrwx    1 root     root            22 Feb 13  2025 libavutil.so.54 -> libavutil.so.54.15.100
+-rwxr-xr-x    1 root     root        239480 Feb  5  2026 libavutil.so.54.15.100
+-rwxr-xr-x    1 root     root        177672 Feb  5  2026 libbinder.so
+lrwxrwxrwx    1 root     root            17 Feb 13  2025 libblkid.so -> libblkid.so.1.1.0
+lrwxrwxrwx    1 root     root            17 Feb 13  2025 libblkid.so.1 -> libblkid.so.1.1.0
+-rwxr-xr-x    1 root     root        195472 Feb  5  2026 libblkid.so.1.1.0
+-rwxr-xr-x    1 root     root        306488 Feb  5  2026 libbluetooth_service.so
+-rwxr-xr-x    1 root     root        137708 Feb  5  2026 libbt-ipc.so
+-rw-r--r--    1 root     root         91980 Feb  5  2026 libbt-vendor.so
+-rwxr-xr-x    1 root     root          5464 Feb  5  2026 libbt_controller.so
+-rwxr-xr-x    1 root     root          5440 Feb  5  2026 libbt_controller_module.so
+-rwxr-xr-x    1 root     root         51368 Feb  5  2026 libbt_extra.so
+-rwxr-xr-x    1 root     root         22136 Feb  5  2026 libbt_gsl.so
+-rwxr-xr-x    1 root     root          5388 Feb  5  2026 libbt_log.so
+-rwxr-xr-x    1 root     root         13748 Feb  5  2026 libbt_pfc.so
+-rwxr-xr-x    1 root     root          5468 Feb  5  2026 libbt_stack_config.so
+-rwxr-xr-x    1 root     root          9612 Feb  5  2026 libbt_storage.so
+-rwxr-xr-x    1 root     root          9612 Feb  5  2026 libbt_transport.so
+-rwxr-xr-x    1 root     root          9580 Feb  5  2026 libbt_util.so
+-rwxr-xr-x    1 root     root         88236 Feb  5  2026 libcarlife_client.so
+--- /usr/local/qt/lib ---
+total 9030
+drwxr-xr-x    2 root     root          1319 Feb  5  2026 .
+drwxr-xr-x    4 root     root            41 Feb 13  2025 ..
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 libQt5Concurrent.so -> libQt5Concurrent.so.5.3.2
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 libQt5Concurrent.so.5 -> libQt5Concurrent.so.5.3.2
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 libQt5Concurrent.so.5.3 -> libQt5Concurrent.so.5.3.2
+-rwxr-xr-x    1 root     root         13972 Feb 13  2025 libQt5Concurrent.so.5.3.2
+lrwxrwxrwx    1 root     root            19 Feb 13  2025 libQt5Core.so -> libQt5Core.so.5.3.2
+lrwxrwxrwx    1 root     root            19 Feb 13  2025 libQt5Core.so.5 -> libQt5Core.so.5.3.2
+lrwxrwxrwx    1 root     root            19 Feb 13  2025 libQt5Core.so.5.3 -> libQt5Core.so.5.3.2
+-rwxr-xr-x    1 root     root       3255864 Feb 13  2025 libQt5Core.so.5.3.2
+lrwxrwxrwx    1 root     root            19 Feb 13  2025 libQt5DBus.so -> libQt5DBus.so.5.3.2
+lrwxrwxrwx    1 root     root            19 Feb 13  2025 libQt5DBus.so.5 -> libQt5DBus.so.5.3.2
+lrwxrwxrwx    1 root     root            19 Feb 13  2025 libQt5DBus.so.5.3 -> libQt5DBus.so.5.3.2
+-rwxr-xr-x    1 root     root        234784 Feb 13  2025 libQt5DBus.so.5.3.2
+lrwxrwxrwx    1 root     root            18 Feb 13  2025 libQt5Gui.so -> libQt5Gui.so.5.3.2
+lrwxrwxrwx    1 root     root            18 Feb 13  2025 libQt5Gui.so.5 -> libQt5Gui.so.5.3.2
+lrwxrwxrwx    1 root     root            18 Feb 13  2025 libQt5Gui.so.5.3 -> libQt5Gui.so.5.3.2
+-rwxr-xr-x    1 root     root       1749672 Feb 13  2025 libQt5Gui.so.5.3.2
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 libQt5Multimedia.so -> libQt5Multimedia.so.5.3.2
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 libQt5Multimedia.so.5 -> libQt5Multimedia.so.5.3.2
+lrwxrwxrwx    1 root     root            25 Feb 13  2025 libQt5Multimedia.so.5.3 -> libQt5Multimedia.so.5.3.2
+-rwxr-xr-x    1 root     root        557920 Feb 13  2025 libQt5Multimedia.so.5.3.2
+lrwxrwxrwx    1 root     root            32 Feb 13  2025 libQt5MultimediaWidgets.so -> libQt5MultimediaWidgets.so.5.3.2
+lrwxrwxrwx    1 root     root            32 Feb 13  2025 libQt5MultimediaWidgets.so.5 -> libQt5MultimediaWidgets.so.5.3.2
+lrwxrwxrwx    1 root     root            32 Feb 13  2025 libQt5MultimediaWidgets.so.5.3 -> libQt5MultimediaWidgets.so.5.3.2
+-rwxr-xr-x    1 root     root         59360 Feb 13  2025 libQt5MultimediaWidgets.so.5.3.2
+lrwxrwxrwx    1 root     root            22 Feb 13  2025 libQt5Network.so -> libQt5Network.so.5.3.2
+lrwxrwxrwx    1 root     root            22 Feb 13  2025 libQt5Network.so.5 -> libQt5Network.so.5.3.2
+lrwxrwxrwx    1 root     root            22 Feb 13  2025 libQt5Network.so.5.3 -> libQt5Network.so.5.3.2
+-rwxr-xr-x    1 root     root        265640 Feb 13  2025 libQt5Network.so.5.3.2
+lrwxrwxrwx    1 root     root            27 Feb 13  2025 libQt5PrintSupport.so -> libQt5PrintSupport.so.5.3.2
+lrwxrwxrwx    1 root     root            27 Feb 13  2025 libQt5PrintSupport.so.5 -> libQt5PrintSupport.so.5.3.2
+lrwxrwxrwx    1 root     root            27 Feb 13  2025 libQt5PrintSupport.so.5.3 -> libQt5PrintSupport.so.5.3.2
+-rwxr-xr-x    1 root     root         42452 Feb 13  2025 libQt5PrintSupport.so.5.3.2
+lrwxrwxrwx    1 root     root            18 Feb 13  2025 libQt5Sql.so -> libQt5Sql.so.5.3.2
+lrwxrwxrwx    1 root     root            18 Feb 13  2025 libQt5Sql.so.5 -> libQt5Sql.so.5.3.2
+lrwxrwxrwx    1 root     root            18 Feb 13  2025 libQt5Sql.so.5.3 -> libQt5Sql.so.5.3.2
+-rwxr-xr-x    1 root     root        121856 Feb 13  2025 libQt5Sql.so.5.3.2
+lrwxrwxrwx    1 root     root            22 Feb 13  2025 libQt5Widgets.so -> libQt5Widgets.so.5.3.2
+--- /media/flash/nvm ---
+total 58
+drwxr-xr-x    1 root     root          2048 Jan  1 00:37 .
+drwxr-xr-x    4 root     root            80 Jan  1 00:00 ..
+-rw-------    1 root     root          1234 Jan  1 00:13 SPCarPlay.keychain
+drwx------    1 root     root          2048 Jan  1 00:01 Sunplus
+-rw-------    1 root     root            17 Jan  1 00:00 apple_usb0.address
+d-w------T    1 root     root          2048 Jan  1 00:00 as_server
+-rw------T    1 root     root           908 Jan  1 00:00 certdata_cache.bin
+-rw-rw-rw-    1 root     root         11614 Jan  1 00:37 gemn_auto.log
+-rw-rw-rw-    1 root     root         16862 Jan  1 00:15 gemn_diag.log
+drwxrwxrwx    1 root     root          2048 Jan  1 00:00 goc
+-rwxrwxrwx    1 root     root         10960 Jan  1 00:00 id3cover.JPEG
+-r-x------    1 root     root           257 Jan  1 00:00 log.cfg
+drwx------    1 root     root          2048 Jan  1 00:00 log_service
+drwx------    1 root     root          2048 Jan  1 00:00 lost+found
+----------    1 root     root           347 Jan  1  1970 peer_devices.txt
+-rw-------    1 root     root           486 Jan  1 00:01 phoneBook.xml
+----------    1 root     root            31 Jan  1 00:00 serialno_cache.bin
+-rw-------    1 root     root           556 Jan  1 00:11 softap.conf
+-rw-------    1 root     root           332 Jan  1 00:37 udhcpd_wlan0.leases
+
+=== WRITABLE SPACE ===
+Filesystem                Size      Used Available Use% Mounted on
+tmpfs                    86.5M    524.0K     86.0M   1% /tmp
+/dev/mtdblock12           8.0M      2.4M      5.6M  29% /tmp/sp/media/flash/nvm
+/dev/mtdblock27           6.0M      1.3M      4.8M  21% /tmp/sp/media/flash/userdata
+
+=== DONE ===

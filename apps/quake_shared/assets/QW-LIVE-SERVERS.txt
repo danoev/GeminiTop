@@ -1,0 +1,15 @@
+QuakeWorld direct-connect servers verified on 2026-03-29:
+
+  139.162.245.4:28501  Cyberdemon.co.uk Quakeworld Server
+  108.61.117.210:28501 nl.quake.world:28501 [Andehlag]
+  108.61.117.210:27501 nl.quake.world:27501 [QW-Group]
+  136.244.100.4:28501  nl.snapcase.net:28501 #1
+  13.79.234.207:28501  ie.predze.dk:28501 - KTX #1
+  128.199.52.100:28503 BUDZOR QUAKE SERVER:28503
+
+From the QuakeWorld console:
+
+  connect 139.162.245.4:28501
+
+These were confirmed by querying the public QuakeWorld masters and then
+requesting live status replies from the listed servers.

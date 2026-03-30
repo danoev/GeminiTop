@@ -1,0 +1,9 @@
+# Files and directories to copy into usb_deploy/apps/dosboxx
+copy app.cfg
+copy build/dosbox-x -> dosbox-x
+copy build/dosboxx-launcher -> dosboxx-launcher
+copy dosbox-x.conf
+copy runtime/drive_c -> runtime/drive_c
+copy runtime/shared -> runtime/shared
+copy docs -> docs
+copy build/share -> share

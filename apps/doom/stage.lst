@@ -1,0 +1,4 @@
+# Files to copy into usb_deploy/apps/doom
+copy app.cfg
+copy doom
+copy doom1.wad

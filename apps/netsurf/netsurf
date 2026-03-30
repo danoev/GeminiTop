@@ -1,0 +1,25 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd "$(dirname "$0")" && pwd)
+RUNTIME_HOME=/tmp/gemini-netsurf-home
+CHOICES_DIR="$RUNTIME_HOME/.netsurf"
+CHOICES_FILE="$CHOICES_DIR/Choices"
+
+mkdir -p "$CHOICES_DIR"
+
+cat > "$CHOICES_FILE" <<EOF
+homepage_url:https://theoldnet.com/
+window_width:1920
+window_height:720
+ca_bundle:$SCRIPT_DIR/res/ca-bundle
+fb_toolbar_size:72
+fb_furniture_size:48
+fb_osk:0
+EOF
+
+export HOME="$RUNTIME_HOME"
+export NETSURFRES="$SCRIPT_DIR/res"
+
+exec "$SCRIPT_DIR/netsurf-bin" -f linux -b 32 -w 1920 -h 720

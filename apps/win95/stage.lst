@@ -1,0 +1,8 @@
+# Files and directories to copy into usb_deploy/apps/win95
+copy app.cfg
+copy build/win95-launcher -> win95-launcher
+copy win95.conf
+copy missing-media.conf
+copy runtime/drive_c -> runtime/drive_c
+copy images -> images
+copy drivers -> drivers

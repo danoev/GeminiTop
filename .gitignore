@@ -1,0 +1,90 @@
+# ============================================================
+# Gemini — .gitignore
+#
+# Downloaded third-party source trees and build artifacts are
+# excluded. Only our own code, Gemini integration sources,
+# patch scripts, and configs are tracked.
+# ============================================================
+
+# ---- macOS ----
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ---- Build outputs ----
+*.o
+*.a
+*.so
+*.elf
+usb_deploy/
+apps/*/build/
+htop/build/
+
+# ---- Firmware packaging (not part of the build) ----
+GEMINI_PACK/
+ISPBOOOT/
+
+# ---- Dropbear (downloaded at build time) ----
+dropbear/dropbear-*/
+dropbear/*.tar.bz2
+
+# ---- DOOM (engine source + WAD downloaded at build time) ----
+apps/doom/doomgeneric/
+apps/doom/doom1.wad
+apps/doom/doom
+
+# ---- Compiled binaries outside app build directories ----
+launcher/geminilauncher
+orchestrator/geminiorchestrator
+apps/audio_diag/audio_diag
+htop/*.old
+
+# ---- libgemini build artifacts ----
+libgemini/libgemini.a
+
+# ---- Editor / IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Python ----
+__pycache__/
+*.pyc
+
+# ---- Logs ----
+*.log
+
+# ============================================================
+# What IS tracked (for reference):
+#
+# Our code:
+#   libgemini/           — full HAL source
+#   launcher/            — launcher source
+#   orchestrator/        — orchestrator source
+#   apps/audio_diag/     — audio diagnostic source
+#   apps/doom/gemini/    — Gemini integration sources for DOOM
+#   apps/doom/Makefile   — our cross-compile Makefile
+#   apps/doom/fetch_source.sh
+#   apps/doom/run.sh
+#
+# Integration sources:
+#   apps/desktop/buildroot/        — desktop Buildroot config + overlay
+#   apps/desktop/runtime/          — desktop host bootstrap scripts
+#   apps/retroarch/gemini/         — Gemini RetroArch integration sources
+#   apps/retroarch/build_retroarch.sh
+#   apps/retroarch/build_cores.sh
+#   apps/retroarch/retroarch.cfg
+#   apps/retroarch/run.sh
+#
+# Patch scripts:
+#   dropbear/patch_auth.py         — auth bypass patch
+#   dropbear/fetch_source.sh
+#
+# Scripts & config:
+#   build.sh, Makefile, toolchain.mk, README.md
+#   scripts/gemn_auto.sh
+# ============================================================

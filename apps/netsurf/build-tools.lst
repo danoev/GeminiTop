@@ -1,0 +1,11 @@
+git
+curl
+perl
+pkg-config
+gperf
+cc
+${GNU_PREFIX}-gcc
+${GNU_PREFIX}-g++
+${GNU_PREFIX}-ar
+${GNU_PREFIX}-ranlib
+${GNU_PREFIX}-strip

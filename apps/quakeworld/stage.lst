@@ -1,0 +1,4 @@
+# Files to copy into usb_deploy/apps/quakeworld
+copy app.cfg
+copy build/quakeworld-launcher
+copy ../quake_shared/build/runtime -> ../quake-data

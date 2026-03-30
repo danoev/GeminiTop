@@ -1,0 +1,8 @@
+# Files and directories to copy into usb_deploy/apps/win31
+copy app.cfg
+copy build/win31-launcher -> win31-launcher
+copy win31.conf
+copy missing-media.conf
+copy runtime/drive_c -> runtime/drive_c
+copy images -> images
+copy drivers -> drivers

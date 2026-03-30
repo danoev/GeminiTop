@@ -1,0 +1,10 @@
+# Files and directories to copy into usb_deploy/apps/retroarch
+mkdir cores
+mkdir system
+mkdir roms
+mkdir saves
+mkdir states
+copy app.cfg
+copy build/retroarch -> retroarch
+copy retroarch.cfg
+copy build/cores -> cores

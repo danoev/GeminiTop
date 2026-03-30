@@ -1,0 +1,34 @@
+diff --git a/Makefile b/Makefile
+index 76b16a2..0f39cc7 100644
+--- a/Makefile
++++ b/Makefile
+@@ -958,6 +958,9 @@ ifeq ($(VID_TARGET),null)
+ SW_OBJS += vid_null.o
+ GL_OBJS += vid_null.o
+ endif
++ifeq ($(VID_TARGET),gemini)
++SW_OBJS += vid_gemini.o
++endif
+ 
+ # ----------------
+ # 2. Input driver
+@@ -982,6 +985,9 @@ ifeq ($(IN_TARGET),sdl)
+ endif
+ ifeq ($(IN_TARGET),null)
+ CL_OBJS += in_null.o
++endif
++ifeq ($(IN_TARGET),gemini)
++CL_OBJS += in_gemini.o
+ endif
+ 
+ # ----------------
+@@ -1027,6 +1033,9 @@ ifeq ($(SND_TARGET),pulseaudio)
+ CL_OBJS += snd_pulseaudio.o
+ CL_LIBS += pulse
+ endif
++ifeq ($(SND_TARGET),gemini)
++CL_OBJS += snd_gemini.o
++endif
+ 
+ # ----------------------------------------------------------------------------
+ # Combining the lists

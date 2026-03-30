@@ -1,0 +1,929 @@
+diff --git a/QW/client/cl_main.c b/QW/client/cl_main.c
+index 95ab3b2..def02b8 100644
+--- a/QW/client/cl_main.c
++++ b/QW/client/cl_main.c
+@@ -20,6 +20,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+ // cl_main.c  -- client main loop
+ 
+ #include <ctype.h>
++#include <stdlib.h>
+ 
+ #ifdef _WIN32
+ #include <windows.h>
+@@ -144,6 +145,439 @@ byte **host_transtables;
+ 
+ netadr_t master_adr;		// address of the master server
+ 
++#define QW_BROWSER_MAX_SERVERS 1024
++#define QW_BROWSER_QUERY_BURST 12
++#define QW_BROWSER_MAX_INFLIGHT 32
++#define QW_BROWSER_MASTER_TIMEOUT 1.0
++#define QW_BROWSER_SERVER_TIMEOUT 1.0
++#define QW_BROWSER_MASTER_RETRIES 3
++#define QW_BROWSER_SERVER_RETRIES 2
++
++typedef struct {
++    netadr_t adr;
++    qboolean active;
++    qboolean pending;
++    qboolean responded;
++    int attempts;
++    double sent_time;
++} qw_browser_master_t;
++
++typedef struct {
++    netadr_t adr;
++    qw_server_browser_entry_t info;
++    qboolean queried;
++    qboolean responded;
++    int attempts;
++    double sent_time;
++} qw_browser_server_t;
++
++static const char *const qw_browser_master_hosts[] = {
++    "5.9.97.180:27000",
++    "78.47.113.68:27000",
++    "master.quakeservers.net:27000",
++    "master.quakeworld.nu:27000",
++};
++
++static const byte qw_browser_master_request[] = { 'c', '\n' };
++static const byte qw_browser_status_request[] = {
++    255, 255, 255, 255, 's', 't', 'a', 't', 'u', 's', ' ', '8', '7', '\n'
++};
++
++static qw_browser_master_t qw_browser_masters[ARRAY_SIZE(qw_browser_master_hosts)];
++static qw_browser_server_t qw_browser_servers[QW_BROWSER_MAX_SERVERS];
++static int qw_browser_order[QW_BROWSER_MAX_SERVERS];
++static int qw_browser_server_count;
++static int qw_browser_visible_count;
++static int qw_browser_next_query;
++static int qw_browser_inflight;
++static qboolean qw_browser_refreshing;
++static qboolean qw_browser_sort_dirty;
++static char qw_browser_status[96];
++
++static void
++CL_ServerBrowser_SendMasterQuery(qw_browser_master_t *master)
++{
++    if (!master || !master->active)
++        return;
++
++    master->pending = true;
++    master->sent_time = realtime;
++    master->attempts++;
++    NET_SendPacket(sizeof(qw_browser_master_request),
++                   (void *)qw_browser_master_request, master->adr);
++}
++
++static void
++CL_ServerBrowser_SendStatusQuery(qw_browser_server_t *server)
++{
++    if (!server || server->responded)
++        return;
++
++    server->queried = true;
++    server->sent_time = realtime;
++    server->attempts++;
++    NET_SendPacket(sizeof(qw_browser_status_request),
++                   (void *)qw_browser_status_request, server->adr);
++}
++
++static void
++CL_ServerBrowser_UpdateStatus(void)
++{
++    int active_masters = 0;
++    int responded_masters = 0;
++
++    for (int i = 0; i < ARRAY_SIZE(qw_browser_masters); i++) {
++        if (!qw_browser_masters[i].active)
++            continue;
++        active_masters++;
++        if (qw_browser_masters[i].responded)
++            responded_masters++;
++    }
++
++    if (qw_browser_refreshing) {
++        qsnprintf(qw_browser_status, sizeof(qw_browser_status),
++                  "Masters %d/%d  Servers %d/%d  Pending %d",
++                  responded_masters, active_masters,
++                  qw_browser_visible_count, qw_browser_server_count,
++                  qw_browser_inflight);
++        return;
++    }
++
++    if (qw_browser_visible_count > 0) {
++        qsnprintf(qw_browser_status, sizeof(qw_browser_status),
++                  "%d server%s ready",
++                  qw_browser_visible_count,
++                  (qw_browser_visible_count == 1) ? "" : "s");
++    } else if (qw_browser_server_count > 0) {
++        qsnprintf(qw_browser_status, sizeof(qw_browser_status),
++                  "No reachable servers (%d address%s checked)",
++                  qw_browser_server_count,
++                  (qw_browser_server_count == 1) ? "" : "es");
++    } else if (active_masters > 0) {
++        qsnprintf(qw_browser_status, sizeof(qw_browser_status),
++                  "No master servers responded");
++    } else {
++        qsnprintf(qw_browser_status, sizeof(qw_browser_status),
++                  "Server browser idle");
++    }
++}
++
++static int
++CL_ServerBrowser_Compare(const void *lhs, const void *rhs)
++{
++    const qw_browser_server_t *a = &qw_browser_servers[*(const int *)lhs];
++    const qw_browser_server_t *b = &qw_browser_servers[*(const int *)rhs];
++    int cmp;
++
++    if (a->info.users != b->info.users)
++        return b->info.users - a->info.users;
++    if (a->info.ping != b->info.ping)
++        return a->info.ping - b->info.ping;
++
++    cmp = strcmp(a->info.name, b->info.name);
++    if (cmp)
++        return cmp;
++
++    return strcmp(a->info.address, b->info.address);
++}
++
++static void
++CL_ServerBrowser_RebuildOrder(void)
++{
++    int count = 0;
++
++    if (!qw_browser_sort_dirty)
++        return;
++
++    for (int i = 0; i < qw_browser_server_count; i++) {
++        if (qw_browser_servers[i].responded)
++            qw_browser_order[count++] = i;
++    }
++
++    qsort(qw_browser_order, count, sizeof(qw_browser_order[0]),
++          CL_ServerBrowser_Compare);
++    qw_browser_visible_count = count;
++    qw_browser_sort_dirty = false;
++}
++
++static int
++CL_ServerBrowser_FindServer(netadr_t adr)
++{
++    for (int i = 0; i < qw_browser_server_count; i++) {
++        if (NET_CompareAdr(qw_browser_servers[i].adr, adr))
++            return i;
++    }
++
++    return -1;
++}
++
++static void
++CL_ServerBrowser_Reset(void)
++{
++    memset(qw_browser_masters, 0, sizeof(qw_browser_masters));
++    memset(qw_browser_servers, 0, sizeof(qw_browser_servers));
++    memset(qw_browser_order, 0, sizeof(qw_browser_order));
++    qw_browser_server_count = 0;
++    qw_browser_visible_count = 0;
++    qw_browser_next_query = 0;
++    qw_browser_inflight = 0;
++    qw_browser_refreshing = false;
++    qw_browser_sort_dirty = true;
++    qw_browser_status[0] = '\0';
++}
++
++static void
++CL_ServerBrowser_AddServer(const netadr_t *adr)
++{
++    qw_browser_server_t *server;
++
++    if (!adr || !adr->port)
++        return;
++    if (CL_ServerBrowser_FindServer(*adr) >= 0)
++        return;
++    if (qw_browser_server_count >= QW_BROWSER_MAX_SERVERS)
++        return;
++
++    server = &qw_browser_servers[qw_browser_server_count++];
++    memset(server, 0, sizeof(*server));
++    server->adr = *adr;
++    qsnprintf(server->info.address, sizeof(server->info.address), "%s",
++              NET_AdrToString(*adr));
++    qsnprintf(server->info.name, sizeof(server->info.name), "%s",
++              server->info.address);
++    qsnprintf(server->info.map, sizeof(server->info.map), "-");
++}
++
++static void
++CL_ServerBrowser_ParsePlayers(qw_browser_server_t *server, char *players)
++{
++    int users = 0;
++
++    while (players && *players) {
++        while (*players == '\n' || *players == '\r')
++            players++;
++        if (!*players)
++            break;
++        users++;
++        while (*players && *players != '\n' && *players != '\r')
++            players++;
++    }
++
++    server->info.users = users;
++}
++
++static qboolean
++CL_ServerBrowser_HandleMasterReply(void)
++{
++    int master_index = -1;
++
++    if (!qw_browser_refreshing || net_message.cursize < 6 || net_message.data[5] != '\n')
++        return false;
++
++    for (int i = 0; i < ARRAY_SIZE(qw_browser_masters); i++) {
++        if (qw_browser_masters[i].active &&
++            NET_CompareAdr(qw_browser_masters[i].adr, net_from)) {
++            master_index = i;
++            break;
++        }
++    }
++
++    if (master_index < 0)
++        return false;
++
++    qw_browser_masters[master_index].pending = false;
++    qw_browser_masters[master_index].responded = true;
++
++    for (int offset = 6; offset + 5 < net_message.cursize; offset += 6) {
++        netadr_t adr;
++
++        memset(&adr, 0, sizeof(adr));
++        memcpy(adr.ip.b, net_message.data + offset, sizeof(adr.ip.b));
++        memcpy(&adr.port, net_message.data + offset + 4, sizeof(adr.port));
++        CL_ServerBrowser_AddServer(&adr);
++    }
++
++    CL_ServerBrowser_UpdateStatus();
++    return true;
++}
++
++static qboolean
++CL_ServerBrowser_HandleStatusReply(void)
++{
++    char response[2048];
++    char *players;
++    qw_browser_server_t *server;
++    int index;
++    size_t copy_len;
++
++    index = CL_ServerBrowser_FindServer(net_from);
++    if (index < 0 || !qw_browser_servers[index].queried || net_message.cursize < 6)
++        return false;
++
++    server = &qw_browser_servers[index];
++    if (!server->responded && qw_browser_inflight > 0)
++        qw_browser_inflight--;
++    if (!server->responded)
++        qw_browser_visible_count++;
++
++    server->queried = false;
++    server->responded = true;
++    server->info.ping = qmin((int)((realtime - server->sent_time) * 1000.0 + 0.5), 9999);
++
++    copy_len = (size_t)net_message.cursize - 5;
++    if (copy_len >= sizeof(response))
++        copy_len = sizeof(response) - 1;
++    memcpy(response, net_message.data + 5, copy_len);
++    response[copy_len] = '\0';
++
++    while (copy_len > 0 &&
++           (response[copy_len - 1] == '\0' ||
++            response[copy_len - 1] == '\n' ||
++            response[copy_len - 1] == '\r')) {
++        response[--copy_len] = '\0';
++    }
++
++    players = strchr(response, '\n');
++    if (players)
++        *players++ = '\0';
++
++    qstrncpy(server->info.name, Info_ValueForKey(response, "hostname"),
++             sizeof(server->info.name));
++    if (!server->info.name[0])
++        qstrncpy(server->info.name, server->info.address, sizeof(server->info.name));
++
++    qstrncpy(server->info.map, Info_ValueForKey(response, "map"),
++             sizeof(server->info.map));
++    if (!server->info.map[0])
++        qstrncpy(server->info.map, "-", sizeof(server->info.map));
++
++    server->info.maxusers = Q_atoi(Info_ValueForKey(response, "maxclients"));
++    CL_ServerBrowser_ParsePlayers(server, players);
++    qw_browser_sort_dirty = true;
++    CL_ServerBrowser_UpdateStatus();
++    return true;
++}
++
++static void
++CL_ServerBrowser_Frame(void)
++{
++    int send_budget = QW_BROWSER_QUERY_BURST;
++    qboolean masters_pending = false;
++
++    if (!qw_browser_refreshing)
++        return;
++
++    for (int i = 0; i < ARRAY_SIZE(qw_browser_masters); i++) {
++        if (!qw_browser_masters[i].active || !qw_browser_masters[i].pending)
++            continue;
++        if (realtime - qw_browser_masters[i].sent_time > QW_BROWSER_MASTER_TIMEOUT) {
++            if (qw_browser_masters[i].attempts < QW_BROWSER_MASTER_RETRIES) {
++                CL_ServerBrowser_SendMasterQuery(&qw_browser_masters[i]);
++                masters_pending = true;
++            } else {
++                qw_browser_masters[i].pending = false;
++            }
++        } else {
++            masters_pending = true;
++        }
++    }
++
++    for (int i = 0; i < qw_browser_server_count; i++) {
++        if (!qw_browser_servers[i].queried || qw_browser_servers[i].responded)
++            continue;
++        if (realtime - qw_browser_servers[i].sent_time > QW_BROWSER_SERVER_TIMEOUT) {
++            if (qw_browser_servers[i].attempts < QW_BROWSER_SERVER_RETRIES) {
++                CL_ServerBrowser_SendStatusQuery(&qw_browser_servers[i]);
++            } else {
++                qw_browser_servers[i].queried = false;
++                if (qw_browser_inflight > 0)
++                    qw_browser_inflight--;
++            }
++        }
++    }
++
++    while (send_budget > 0 &&
++           qw_browser_inflight < QW_BROWSER_MAX_INFLIGHT &&
++           qw_browser_next_query < qw_browser_server_count) {
++        qw_browser_server_t *server = &qw_browser_servers[qw_browser_next_query++];
++
++        if (server->queried || server->responded)
++            continue;
++
++        qw_browser_inflight++;
++        CL_ServerBrowser_SendStatusQuery(server);
++        send_budget--;
++    }
++
++    if (!masters_pending &&
++        qw_browser_next_query >= qw_browser_server_count &&
++        qw_browser_inflight == 0) {
++        qw_browser_refreshing = false;
++    }
++
++    CL_ServerBrowser_UpdateStatus();
++}
++
++void
++CL_ServerBrowser_Refresh(void)
++{
++    CL_ServerBrowser_Reset();
++
++    for (int i = 0; i < ARRAY_SIZE(qw_browser_master_hosts); i++) {
++        if (!NET_StringToAdr(qw_browser_master_hosts[i], &qw_browser_masters[i].adr))
++            continue;
++
++        qw_browser_masters[i].active = true;
++        CL_ServerBrowser_SendMasterQuery(&qw_browser_masters[i]);
++    }
++
++    qw_browser_refreshing = true;
++    CL_ServerBrowser_UpdateStatus();
++}
++
++void
++CL_ServerBrowser_Cancel(void)
++{
++    for (int i = 0; i < ARRAY_SIZE(qw_browser_masters); i++)
++        qw_browser_masters[i].pending = false;
++    for (int i = 0; i < qw_browser_server_count; i++)
++        qw_browser_servers[i].queried = false;
++
++    qw_browser_inflight = 0;
++    qw_browser_refreshing = false;
++    CL_ServerBrowser_UpdateStatus();
++}
++
++qboolean
++CL_ServerBrowser_IsRefreshing(void)
++{
++    return qw_browser_refreshing;
++}
++
++int
++CL_ServerBrowser_Count(void)
++{
++    CL_ServerBrowser_RebuildOrder();
++    return qw_browser_visible_count;
++}
++
++const qw_server_browser_entry_t *
++CL_ServerBrowser_Get(int index)
++{
++    CL_ServerBrowser_RebuildOrder();
++    if (index < 0 || index >= qw_browser_visible_count)
++        return NULL;
++    return &qw_browser_servers[qw_browser_order[index]].info;
++}
++
++const char *
++CL_ServerBrowser_Status(void)
++{
++    if (!qw_browser_status[0])
++        CL_ServerBrowser_UpdateStatus();
++    return qw_browser_status;
++}
++
+ cvar_t host_speeds = { "host_speeds", "0" };	// set for running times
+ cvar_t developer = { "developer", "0" };
+ 
+@@ -271,6 +704,7 @@ CL_CheckForResend(void)
+ void
+ CL_BeginServerConnect(void)
+ {
++    CL_ServerBrowser_Cancel();
+     connect_time = 0;
+     CL_CheckForResend();
+ }
+@@ -816,6 +1250,11 @@ CL_ConnectionlessPacket(void)
+     MSG_ReadLong();		// skip the -1
+ 
+     c = MSG_ReadByte();
++    if ((c == 'd' && CL_ServerBrowser_HandleMasterReply())
++        || (c == 'n' && CL_ServerBrowser_HandleStatusReply())) {
++	return;
++    }
++
+     if (!cls.demoplayback)
+ 	Con_Printf("%s: ", NET_AdrToString(net_from));
+ //      Con_DPrintf ("%s", net_message.data + 5);
+@@ -1353,6 +1792,7 @@ Host_Frame(float time)
+ 
+     // fetch results from server
+     CL_ReadPackets();
++    CL_ServerBrowser_Frame();
+ 
+     /* Set the pmove physents based on current state... */
+     CL_SetSolidEntities(&pestack);
+diff --git a/QW/client/client.h b/QW/client/client.h
+index 0c24685..793212d 100644
+--- a/QW/client/client.h
++++ b/QW/client/client.h
+@@ -363,6 +363,22 @@ extern int host_hunklevel;              // FIXME: probably should be an internal
+ 
+ dlight_t *CL_AllocDlight(int key);
+ 
++typedef struct {
++    char address[32];
++    char name[64];
++    char map[32];
++    int users;
++    int maxusers;
++    int ping;
++} qw_server_browser_entry_t;
++
++void CL_ServerBrowser_Refresh(void);
++void CL_ServerBrowser_Cancel(void);
++qboolean CL_ServerBrowser_IsRefreshing(void);
++int CL_ServerBrowser_Count(void);
++const qw_server_browser_entry_t *CL_ServerBrowser_Get(int index);
++const char *CL_ServerBrowser_Status(void);
++
+ /* The standard dynamic light colors */
+ enum {
+     DLIGHT_FLASH = 0,
+diff --git a/common/menu.c b/common/menu.c
+index 9922d03..f4835a2 100644
+--- a/common/menu.c
++++ b/common/menu.c
+@@ -65,6 +65,20 @@ void M_Menu_Quit_f(void);
+ static void M_Quit_Draw(void);
+ static void M_Quit_Key(knum_t keynum);
+ 
++#ifdef QW_HACK
++static void M_Menu_LanConfig_f(void);
++static void M_LanConfig_Draw(void);
++static void M_LanConfig_Key(knum_t keynum);
++
++static void M_Menu_Search_f(void);
++static void M_Search_Draw(void);
++static void M_Search_Key(knum_t keynum);
++
++static void M_Menu_ServerList_f(void);
++static void M_ServerList_Draw(void);
++static void M_ServerList_Key(knum_t keynum);
++#endif
++
+ #ifdef NQ_HACK
+ static void M_Menu_SinglePlayer_f(void);
+ static void M_SinglePlayer_Draw(void);
+@@ -217,7 +231,8 @@ static int m_save_demonum;
+ 
+ #ifdef QW_HACK
+ enum {
+-    m_none, m_main, m_options, m_video, m_keys, m_quit
++    m_none, m_main, m_options, m_video, m_keys, m_quit,
++    m_lanconfig, m_search, m_slist
+ } m_state;
+ #endif
+ #ifdef NQ_HACK
+@@ -264,6 +279,7 @@ typedef enum {
+     M_MAIN_CURSOR_LINES,
+ #endif
+ #ifdef QW_HACK
++    M_MAIN_CURSOR_MULTIPLAYER,
+     M_MAIN_CURSOR_OPTIONS,
+     M_MAIN_CURSOR_QUIT,
+     M_MAIN_CURSOR_LINES,
+@@ -291,7 +307,7 @@ M_Main_Draw(void)
+     static const int cursor_heights[] = { 32, 52, 72, 92, 112 };
+ #endif
+ #ifdef QW_HACK
+-    static const int cursor_heights[] = { 72, 112 };
++    static const int cursor_heights[] = { 52, 72, 112 };
+ #endif
+     int flash;
+     const qpic8_t *pic;
+@@ -342,6 +358,12 @@ M_Main_Key(knum_t keynum)
+ 	m_entersound = true;
+ 
+ 	switch (m_main_cursor) {
++#ifdef QW_HACK
++	case M_MAIN_CURSOR_MULTIPLAYER:
++	    M_Menu_LanConfig_f();
++	    break;
++#endif
++
+ 	case M_MAIN_CURSOR_OPTIONS:
+ 	    M_Menu_Options_f();
+ 	    break;
+@@ -901,6 +923,11 @@ M_Menu_Quit_f(void)
+ static void
+ M_Quit_Key(knum_t keynum)
+ {
++    if (keynum == 'N')
++	keynum = K_n;
++    else if (keynum == 'Y')
++	keynum = K_y;
++
+     switch (keynum) {
+     case K_ESCAPE:
+     case K_n:
+@@ -1015,6 +1042,20 @@ M_Draw(void)
+ 	M_Quit_Draw();
+ 	break;
+ 
++#ifdef QW_HACK
++    case m_lanconfig:
++	M_LanConfig_Draw();
++	break;
++
++    case m_search:
++	M_Search_Draw();
++	break;
++
++    case m_slist:
++	M_ServerList_Draw();
++	break;
++#endif
++
+ #ifdef NQ_HACK
+     case m_singleplayer:
+ 	M_SinglePlayer_Draw();
+@@ -1098,6 +1139,20 @@ M_Keydown(knum_t keynum)
+ 	M_Quit_Key(keynum);
+ 	return;
+ 
++#ifdef QW_HACK
++    case m_lanconfig:
++	M_LanConfig_Key(keynum);
++	return;
++
++    case m_search:
++	M_Search_Key(keynum);
++	return;
++
++    case m_slist:
++	M_ServerList_Key(keynum);
++	return;
++#endif
++
+ #ifdef NQ_HACK
+     case m_singleplayer:
+ 	M_SinglePlayer_Key(keynum);
+@@ -1142,6 +1197,302 @@ M_Keydown(knum_t keynum)
+     }
+ }
+ 
++#ifdef QW_HACK
++
++static int qw_join_cursor;
++static int qw_slist_cursor;
++static int qw_slist_first;
++static double qw_search_complete_time;
++static char qw_joinname[64];
++
++#define QW_JOIN_CURSOR_REFRESH 0
++#define QW_JOIN_CURSOR_ADDRESS 1
++#define QW_SERVERLIST_ROWS 12
++
++static void
++M_Menu_LanConfig_f(void)
++{
++    key_dest = key_menu;
++    m_state = m_lanconfig;
++    m_entersound = true;
++    if (qw_join_cursor < 0 || qw_join_cursor > QW_JOIN_CURSOR_ADDRESS)
++        qw_join_cursor = QW_JOIN_CURSOR_REFRESH;
++}
++
++static void
++M_LanConfig_Draw(void)
++{
++    const qpic8_t *p;
++    int basex;
++
++    M_DrawTransPic(16, 4, Draw_CachePic("gfx/qplaque.lmp"));
++    p = Draw_CachePic("gfx/p_multi.lmp");
++    basex = (320 - p->width) / 2;
++    M_DrawTransPic(basex, 4, p);
++    basex += 8;
++
++    M_Print(basex, 32, "Join Game - QuakeWorld");
++    M_Print(basex, 48, va("Address: %s", NET_BaseAdrToString(net_local_adr)));
++
++    M_DrawTextBox(basex, 64, 28, 1);
++    M_Print(basex + 8, 72, "Refresh internet servers...");
++
++    M_Print(basex, 100, "Join game at:");
++    M_DrawTextBox(basex, 112, 30, 1);
++    M_Print(basex + 8, 120, qw_joinname);
++
++    M_DrawCursor(basex - 8,
++                 (qw_join_cursor == QW_JOIN_CURSOR_REFRESH) ? 72 : 120,
++                 12);
++
++    if (qw_join_cursor == QW_JOIN_CURSOR_ADDRESS)
++        M_DrawCursor(basex + 8 + 8 * strlen(qw_joinname), 120, 10);
++
++    M_PrintWhite(basex, 148, CL_ServerBrowser_Status());
++}
++
++static void
++M_LanConfig_Key(knum_t keynum)
++{
++    switch (keynum) {
++    case K_ESCAPE:
++        M_Menu_Main_f();
++        break;
++
++    case K_UPARROW:
++    case K_DOWNARROW:
++        S_LocalSound("misc/menu1.wav");
++        qw_join_cursor ^= 1;
++        break;
++
++    case K_ENTER:
++        m_entersound = true;
++        if (qw_join_cursor == QW_JOIN_CURSOR_REFRESH) {
++            M_Menu_Search_f();
++            break;
++        }
++
++        if (qw_joinname[0]) {
++            key_dest = key_game;
++            m_state = m_none;
++            Cbuf_AddText("connect \"%s\"\n", qw_joinname);
++        }
++        break;
++
++    case K_BACKSPACE:
++        if (qw_join_cursor == QW_JOIN_CURSOR_ADDRESS && qw_joinname[0])
++            qw_joinname[strlen(qw_joinname) - 1] = '\0';
++        break;
++
++    default: {
++        size_t length;
++
++        if (qw_join_cursor != QW_JOIN_CURSOR_ADDRESS)
++            break;
++        if (keynum < K_SPACE || keynum > K_DEL)
++            break;
++        length = strlen(qw_joinname);
++        if (length + 1 >= sizeof(qw_joinname))
++            break;
++        qw_joinname[length] = keynum;
++        qw_joinname[length + 1] = '\0';
++        break;
++    }
++    }
++}
++
++static void
++M_Menu_Search_f(void)
++{
++    key_dest = key_menu;
++    m_state = m_search;
++    m_entersound = false;
++    qw_search_complete_time = 0;
++    CL_ServerBrowser_Refresh();
++}
++
++static void
++M_Search_Draw(void)
++{
++    const qpic8_t *p;
++    int x;
++
++    p = Draw_CachePic("gfx/p_multi.lmp");
++    M_DrawTransPic((320 - p->width) / 2, 4, p);
++    x = (320 / 2) - ((26 * 8) / 2) + 4;
++    M_DrawTextBox(x - 8, 32, 26, 3);
++    M_Print(x, 40, "Refreshing QuakeWorld list");
++    M_Print(x, 56, CL_ServerBrowser_Status());
++
++    if (CL_ServerBrowser_IsRefreshing())
++        return;
++
++    if (CL_ServerBrowser_Count() > 0) {
++        M_Menu_ServerList_f();
++        return;
++    }
++
++    if (!qw_search_complete_time)
++        qw_search_complete_time = realtime;
++
++    M_PrintWhite(x, 72, "No servers found");
++    if ((realtime - qw_search_complete_time) > 2.0)
++        M_Menu_LanConfig_f();
++}
++
++static void
++M_Search_Key(knum_t keynum)
++{
++    switch (keynum) {
++    case K_ESCAPE:
++        CL_ServerBrowser_Cancel();
++        M_Menu_LanConfig_f();
++        break;
++    case K_SPACE:
++    case K_ENTER:
++        M_Menu_Search_f();
++        break;
++    default:
++        break;
++    }
++}
++
++static void
++M_Menu_ServerList_f(void)
++{
++    key_dest = key_menu;
++    m_state = m_slist;
++    m_entersound = true;
++    if (qw_slist_cursor >= CL_ServerBrowser_Count())
++        qw_slist_cursor = 0;
++    if (qw_slist_cursor < 0)
++        qw_slist_cursor = 0;
++    if (qw_slist_first > qw_slist_cursor)
++        qw_slist_first = qw_slist_cursor;
++}
++
++static void
++M_ServerList_Draw(void)
++{
++    const qpic8_t *p;
++    const qw_server_browser_entry_t *selected;
++    int total = CL_ServerBrowser_Count();
++
++    if (total <= 0) {
++        M_Menu_Search_f();
++        return;
++    }
++
++    if (qw_slist_cursor >= total)
++        qw_slist_cursor = total - 1;
++    if (qw_slist_cursor < 0)
++        qw_slist_cursor = 0;
++    if (qw_slist_cursor < qw_slist_first)
++        qw_slist_first = qw_slist_cursor;
++    if (qw_slist_cursor >= qw_slist_first + QW_SERVERLIST_ROWS)
++        qw_slist_first = qw_slist_cursor - QW_SERVERLIST_ROWS + 1;
++
++    p = Draw_CachePic("gfx/p_multi.lmp");
++    M_DrawTransPic((320 - p->width) / 2, 4, p);
++    M_PrintWhite(16, 32, "Ping Players Map      Server");
++
++    for (int row = 0; row < QW_SERVERLIST_ROWS; row++) {
++        char string[80];
++        int index = qw_slist_first + row;
++        const qw_server_browser_entry_t *entry;
++
++        if (index >= total)
++            break;
++
++        entry = CL_ServerBrowser_Get(index);
++        if (!entry)
++            continue;
++
++        qsnprintf(string, sizeof(string), "%4d %2d/%-2d %-8.8s %-18.18s",
++                  entry->ping, entry->users, entry->maxusers,
++                  entry->map, entry->name);
++        M_Print(16, 40 + row * 8, string);
++    }
++
++    M_DrawCursor(0, 40 + (qw_slist_cursor - qw_slist_first) * 8, 12);
++
++    selected = CL_ServerBrowser_Get(qw_slist_cursor);
++    if (selected) {
++        M_PrintWhite(16, 148, selected->address);
++    }
++    M_PrintWhite(16, 164, CL_ServerBrowser_Status());
++}
++
++static void
++M_ServerList_Key(knum_t keynum)
++{
++    int total = CL_ServerBrowser_Count();
++
++    switch (keynum) {
++    case K_ESCAPE:
++        M_Menu_LanConfig_f();
++        break;
++
++    case K_SPACE:
++        M_Menu_Search_f();
++        break;
++
++    case K_UPARROW:
++    case K_LEFTARROW:
++        if (!total)
++            break;
++        S_LocalSound("misc/menu1.wav");
++        qw_slist_cursor--;
++        if (qw_slist_cursor < 0)
++            qw_slist_cursor = total - 1;
++        break;
++
++    case K_DOWNARROW:
++    case K_RIGHTARROW:
++        if (!total)
++            break;
++        S_LocalSound("misc/menu1.wav");
++        qw_slist_cursor++;
++        if (qw_slist_cursor >= total)
++            qw_slist_cursor = 0;
++        break;
++
++    case K_PGUP:
++        if (!total)
++            break;
++        S_LocalSound("misc/menu1.wav");
++        qw_slist_cursor -= QW_SERVERLIST_ROWS;
++        if (qw_slist_cursor < 0)
++            qw_slist_cursor = 0;
++        break;
++
++    case K_PGDN:
++        if (!total)
++            break;
++        S_LocalSound("misc/menu1.wav");
++        qw_slist_cursor += QW_SERVERLIST_ROWS;
++        if (qw_slist_cursor >= total)
++            qw_slist_cursor = total - 1;
++        break;
++
++    case K_ENTER: {
++        const qw_server_browser_entry_t *entry = CL_ServerBrowser_Get(qw_slist_cursor);
++        if (!entry)
++            break;
++        S_LocalSound("misc/menu2.wav");
++        key_dest = key_game;
++        m_state = m_none;
++        Cbuf_AddText("connect \"%s\"\n", entry->address);
++        break;
++    }
++
++    default:
++        break;
++    }
++}
++
++#endif /* QW_HACK */
++
+ /* All NQ menus below */
+ #ifdef NQ_HACK
+ 
