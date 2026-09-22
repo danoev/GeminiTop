@@ -10,10 +10,12 @@ python3 firmware_tools/scripts/inspect_firmware.py firmware.zip \
 ```
 
 Discovery uses container magic, validated record bounds and hashes, uImage
-header/data CRCs, and SquashFS superblocks. If `unsquashfs` is available, the
-inspector uses its list/cat modes to add a path inventory and hashes for ELF
-files without extracting a filesystem tree. When it is unavailable, the report
-marks these sections `UNAVAILABLE` instead of guessing.
+header/data CRCs, and structurally validated SquashFS superblocks. Component
+tables with any MD5 mismatch are rejected. If `unsquashfs` is available, the
+inspector uses time- and output-bounded list/cat modes to add a path inventory
+and hashes for ELF files without extracting a filesystem tree. Unavailable or
+boundedly skipped data is marked `UNAVAILABLE` or `PARTIAL` instead of guessed.
+An `--output` path may not alias the input by pathname, symlink, or hardlink.
 
 The pre-existing `extract_firmware.py`, `validate_firmware.py`,
 `repack_firmware.py`, and GUI are legacy Audi-reference tools with fixed layout

@@ -71,6 +71,37 @@ class TargetIdentificationTests(unittest.TestCase):
         self.assertEqual(evidence["framebuffer.virtual_height"], 1440)
         self.assertEqual(evidence["touch.name"], "fts_ts")
 
+    def test_hex_nvm_summary_is_preserved_and_normalized(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "stage1-summary.txt").write_text("mtd.nvm_hex=00800000\n")
+            (root / "mtd.txt").write_text('mtd12: 00800000 00020000 "nvm"\n')
+            evidence = IDENTIFY.parse_probe_directory(root)
+        self.assertEqual(evidence["mtd.nvm_hex"], "00800000")
+        self.assertEqual(evidence["mtd.nvm_bytes"], 8388608)
+        self.assertNotIn("conflicts", evidence)
+
+    def test_summary_raw_conflict_is_unknown_and_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "stage1-summary.txt").write_text(
+                "identity.hardware=OTHER\nmtd.nvm_hex=01000000\n"
+            )
+            (root / "cpuinfo.txt").write_text("Hardware\t: GEMINI\n")
+            (root / "mtd.txt").write_text('mtd12: 00800000 00020000 "nvm"\n')
+            evidence = IDENTIFY.parse_probe_directory(root)
+        self.assertEqual(evidence["identity.hardware"], "UNKNOWN")
+        self.assertEqual(evidence["mtd.nvm_bytes"], "UNKNOWN")
+        self.assertEqual(evidence["mtd.nvm_hex"], "01000000")
+        self.assertEqual(
+            {item["field"] for item in evidence["conflicts"]},
+            {"identity.hardware", "mtd.nvm_bytes"},
+        )
+        comparison = IDENTIFY.compare_profile(PROFILE, evidence)
+        results = {item["field"]: item["result"] for item in comparison["fields"]}
+        self.assertEqual(results["identity.hardware"], "UNKNOWN")
+        self.assertEqual(results["mtd.nvm_bytes"], "UNKNOWN")
+
 
 if __name__ == "__main__":
     unittest.main()

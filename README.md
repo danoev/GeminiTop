@@ -34,6 +34,10 @@ GeminiTop demonstrated that these RoadTop Linux displays can run software from U
 
 The original project was developed against an Audi-oriented RoadTop target.
 
+That legacy Audi-targeted material is retained as reference-only for the
+Mercedes work. It must not be treated as compatible with, or deployed to, the
+W176 target without independent target identification and review.
+
 This fork is intended to take that work in a different direction:
 
 - identify and document Mercedes RoadTop hardware accurately;
@@ -119,6 +123,13 @@ It does **not**:
 - or persist anything onto the RoadTop unit.
 
 Probe output is written to USB.
+
+Both the autorun entry point and the probe independently require the script
+directory to be the exact mount point of the single mounted removable
+`/dev/sd...` partition and require an approved FAT/vfat filesystem. The probe
+fails closed on missing, ambiguous, or invalid media. Each run writes explicit
+status, error, and optional-operation manifests; a `COMPLETE` marker is created
+only after every mandatory collection and write succeeds.
 
 See:
 

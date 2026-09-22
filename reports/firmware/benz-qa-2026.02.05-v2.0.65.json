@@ -4014,6 +4014,8 @@
             "bounds_ok": true,
             "bytes_used": 3879172,
             "compression_id": 3,
+            "compression_ok": true,
+            "counts_ok": true,
             "flags": 1088,
             "fragments": 15,
             "id_count": 1,
@@ -7910,10 +7912,13 @@
                 }
               ],
               "reason": null,
+              "skipped_elf_checks": [],
               "status": "COMPLETE"
             },
             "mkfs_time": 1770261415,
             "offset": 9664512,
+            "root_inode_ok": true,
+            "tables_ok": true,
             "valid": true,
             "version": "4.0"
           },
@@ -7923,6 +7928,8 @@
             "bounds_ok": true,
             "bytes_used": 46325438,
             "compression_id": 3,
+            "compression_ok": true,
+            "counts_ok": true,
             "flags": 1088,
             "fragments": 313,
             "id_count": 1,
@@ -19851,10 +19858,13 @@
                 }
               ],
               "reason": null,
+              "skipped_elf_checks": [],
               "status": "COMPLETE"
             },
             "mkfs_time": 1770261416,
             "offset": 13547520,
+            "root_inode_ok": true,
+            "tables_ok": true,
             "valid": true,
             "version": "4.0"
           },
@@ -19864,6 +19874,8 @@
             "bounds_ok": true,
             "bytes_used": 21316508,
             "compression_id": 3,
+            "compression_ok": true,
+            "counts_ok": true,
             "flags": 1088,
             "fragments": 39,
             "id_count": 1,
@@ -21784,10 +21796,13 @@
                 }
               ],
               "reason": null,
+              "skipped_elf_checks": [],
               "status": "COMPLETE"
             },
             "mkfs_time": 1770261415,
             "offset": 59873280,
+            "root_inode_ok": true,
+            "tables_ok": true,
             "valid": true,
             "version": "4.0"
           }
@@ -21806,13 +21821,17 @@
             "bounds_ok": false,
             "bytes_used": 17869835961845610494,
             "compression_id": 48400,
-            "error": "invalid SquashFS version, geometry, or bounds",
+            "compression_ok": false,
+            "counts_ok": true,
+            "error": "invalid SquashFS version, geometry, compression, counts, tables, or bounds",
             "flags": 38209,
             "fragments": 2952985539,
             "id_count": 49227,
             "inode_count": 4293918720,
             "mkfs_time": 1275311379,
             "offset": 6265032,
+            "root_inode_ok": false,
+            "tables_ok": false,
             "valid": false,
             "version": "46392.17925"
           },
@@ -21822,13 +21841,17 @@
             "bounds_ok": false,
             "bytes_used": 13866945441904481438,
             "compression_id": 18595,
-            "error": "invalid SquashFS version, geometry, or bounds",
+            "compression_ok": false,
+            "counts_ok": false,
+            "error": "invalid SquashFS version, geometry, compression, counts, tables, or bounds",
             "flags": 18680,
             "fragments": 3228649580,
             "id_count": 49265,
             "inode_count": 3228649321,
             "mkfs_time": 3228649390,
             "offset": 6265908,
+            "root_inode_ok": false,
+            "tables_ok": false,
             "valid": false,
             "version": "18783.49265"
           }
@@ -21991,7 +22014,8 @@
               ],
               "payload_base": 1024,
               "record_size": 128,
-              "table_offset": 3200
+              "table_offset": 3200,
+              "valid": true
             }
           ],
           "declared_bounds_ok": true,
@@ -22001,6 +22025,7 @@
           "magic": "GEMINI",
           "payload_name": "ISP_UPDT.BIN",
           "payload_sha256": "1271b3661b0ec4ddfe4377b5b3a02fa1cf2f1ccd78070177cdba7045f6f4faa9",
+          "rejected_component_tables": [],
           "variant": "QA",
           "version": "12.0.1.0.0.0.0.0"
         },
@@ -25989,6 +26014,8 @@
             "bounds_ok": true,
             "bytes_used": 21316508,
             "compression_id": 3,
+            "compression_ok": true,
+            "counts_ok": true,
             "flags": 1088,
             "fragments": 39,
             "id_count": 1,
@@ -27909,10 +27936,13 @@
                 }
               ],
               "reason": null,
+              "skipped_elf_checks": [],
               "status": "COMPLETE"
             },
             "mkfs_time": 1770261415,
             "offset": 17408,
+            "root_inode_ok": true,
+            "tables_ok": true,
             "valid": true,
             "version": "4.0"
           },
@@ -27922,6 +27952,8 @@
             "bounds_ok": true,
             "bytes_used": 46325438,
             "compression_id": 3,
+            "compression_ok": true,
+            "counts_ok": true,
             "flags": 1088,
             "fragments": 313,
             "id_count": 1,
@@ -39850,10 +39882,13 @@
                 }
               ],
               "reason": null,
+              "skipped_elf_checks": [],
               "status": "COMPLETE"
             },
             "mkfs_time": 1770261416,
             "offset": 21337088,
+            "root_inode_ok": true,
+            "tables_ok": true,
             "valid": true,
             "version": "4.0"
           },
@@ -39863,6 +39898,8 @@
             "bounds_ok": true,
             "bytes_used": 3879172,
             "compression_id": 3,
+            "compression_ok": true,
+            "counts_ok": true,
             "flags": 1088,
             "fragments": 15,
             "id_count": 1,
@@ -43759,10 +43796,13 @@
                 }
               ],
               "reason": null,
+              "skipped_elf_checks": [],
               "status": "COMPLETE"
             },
             "mkfs_time": 1770261415,
             "offset": 67662848,
+            "root_inode_ok": true,
+            "tables_ok": true,
             "valid": true,
             "version": "4.0"
           }
@@ -43781,13 +43821,17 @@
             "bounds_ok": false,
             "bytes_used": 17869835961845610494,
             "compression_id": 48400,
-            "error": "invalid SquashFS version, geometry, or bounds",
+            "compression_ok": false,
+            "counts_ok": true,
+            "error": "invalid SquashFS version, geometry, compression, counts, tables, or bounds",
             "flags": 38209,
             "fragments": 2952985539,
             "id_count": 49227,
             "inode_count": 4293918720,
             "mkfs_time": 1275311379,
             "offset": 72272072,
+            "root_inode_ok": false,
+            "tables_ok": false,
             "valid": false,
             "version": "46392.17925"
           },
@@ -43797,13 +43841,17 @@
             "bounds_ok": false,
             "bytes_used": 13866945441904481438,
             "compression_id": 18595,
-            "error": "invalid SquashFS version, geometry, or bounds",
+            "compression_ok": false,
+            "counts_ok": false,
+            "error": "invalid SquashFS version, geometry, compression, counts, tables, or bounds",
             "flags": 18680,
             "fragments": 3228649580,
             "id_count": 49265,
             "inode_count": 3228649321,
             "mkfs_time": 3228649390,
             "offset": 72272948,
+            "root_inode_ok": false,
+            "tables_ok": false,
             "valid": false,
             "version": "18783.49265"
           }

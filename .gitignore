@@ -46,6 +46,9 @@ firmware_tools/REPACKED/
 **/spapp/
 **/filesystem-root/
 **/extracted-filesystem/
+**/squashfs-root/
+**/squashfs-root-*/
+**/extracted_*/
 stage1-probe/
 stage1-probe-*/
 probe-results/

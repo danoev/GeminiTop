@@ -13,10 +13,12 @@ import json
 import mmap
 import os
 import re
+import signal
 import shutil
 import struct
 import subprocess
 import tempfile
+import threading
 import zipfile
 import zlib
 from pathlib import Path
@@ -30,6 +32,13 @@ MAX_MEMBER_BYTES = 1024 * 1024 * 1024
 MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024
 MAX_COMPRESSION_RATIO = 1000
 MAX_MAGIC_HITS = 4096
+SQUASHFS_INVALID_TABLE = (1 << 64) - 1
+SQUASHFS_COMPRESSION_IDS = frozenset(range(1, 7))
+UNSQUASHFS_LIST_TIMEOUT_SECONDS = 30
+UNSQUASHFS_CAT_TIMEOUT_SECONDS = 10
+UNSQUASHFS_LIST_STDOUT_LIMIT = 8 * 1024 * 1024
+UNSQUASHFS_STDERR_LIMIT = 64 * 1024
+MAX_ELF_BYTES = 64 * 1024 * 1024
 
 
 class InspectionError(RuntimeError):
@@ -160,11 +169,37 @@ def _parse_squashfs(blob: mmap.mmap, offset: int) -> Dict[str, object]:
         fragment_table,
         lookup_table,
     ) = fields
-    del magic, root_inode, id_table, xattr_table, inode_table, directory_table, fragment_table, lookup_table
     remaining = len(blob) - offset
-    block_ok = block_size >= 4096 and block_size <= 1024 * 1024 and block_size & (block_size - 1) == 0
+    block_ok = (
+        4096 <= block_size <= 1024 * 1024
+        and block_size & (block_size - 1) == 0
+        and block_log == block_size.bit_length() - 1
+    )
     bounds_ok = 96 <= bytes_used <= remaining
     version_ok = major == 4 and minor == 0
+    counts_ok = inode_count > 0 and id_count > 0 and fragments <= inode_count
+    compression_ok = compression in SQUASHFS_COMPRESSION_IDS
+
+    def required_table_ok(value: int) -> bool:
+        return 96 <= value < bytes_used
+
+    def optional_table_ok(value: int) -> bool:
+        return value == SQUASHFS_INVALID_TABLE or required_table_ok(value)
+
+    tables_ok = False
+    root_inode_ok = False
+    if bounds_ok:
+        required_tables = (inode_table, directory_table, id_table)
+        tables_ok = all(required_table_ok(value) for value in required_tables)
+        tables_ok = tables_ok and inode_table <= directory_table <= id_table
+        if fragments:
+            tables_ok = tables_ok and required_table_ok(fragment_table)
+            tables_ok = tables_ok and directory_table <= fragment_table <= id_table
+        else:
+            tables_ok = tables_ok and optional_table_ok(fragment_table)
+        tables_ok = tables_ok and optional_table_ok(xattr_table) and optional_table_ok(lookup_table)
+        root_inode_block = root_inode >> 16
+        root_inode_ok = root_inode_block < bytes_used - inode_table
     result.update(
         {
             "inode_count": inode_count,
@@ -178,11 +213,23 @@ def _parse_squashfs(blob: mmap.mmap, offset: int) -> Dict[str, object]:
             "version": f"{major}.{minor}",
             "bytes_used": bytes_used,
             "bounds_ok": bounds_ok,
+            "compression_ok": compression_ok,
+            "counts_ok": counts_ok,
+            "tables_ok": tables_ok,
+            "root_inode_ok": root_inode_ok,
         }
     )
-    result["valid"] = block_ok and bounds_ok and version_ok
+    result["valid"] = (
+        block_ok
+        and bounds_ok
+        and version_ok
+        and counts_ok
+        and compression_ok
+        and tables_ok
+        and root_inode_ok
+    )
     if not result["valid"]:
-        result["error"] = "invalid SquashFS version, geometry, or bounds"
+        result["error"] = "invalid SquashFS version, geometry, compression, counts, tables, or bounds"
     return result
 
 
@@ -204,15 +251,17 @@ def _component_record(blob: mmap.mmap, table_offset: int, payload_base: int) -> 
     if size <= 0 or absolute < payload_base or absolute + size > len(blob):
         return None
     component = blob[absolute : absolute + size]
+    calculated_md5 = hashlib.md5(component).hexdigest()
+    table_md5 = raw_md5.decode("ascii").lower()
     return {
         "name": raw_name.decode("ascii"),
         "table_offset": table_offset,
         "relative_offset": rel_offset,
         "absolute_offset": absolute,
         "size": size,
-        "table_md5": raw_md5.decode("ascii").lower(),
-        "calculated_md5": hashlib.md5(component).hexdigest(),
-        "md5_ok": hashlib.md5(component).hexdigest() == raw_md5.decode("ascii").lower(),
+        "table_md5": table_md5,
+        "calculated_md5": calculated_md5,
+        "md5_ok": calculated_md5 == table_md5,
     }
 
 
@@ -256,6 +305,10 @@ def _discover_component_tables(blob: mmap.mmap, payload_bases: Iterable[int]) ->
         ):
             continue
         maximal.append(candidate)
+    for table in maximal:
+        table["valid"] = all(component["md5_ok"] for component in table["components"])
+        if not table["valid"]:
+            table["error"] = "one or more component MD5 values do not match"
     return sorted(maximal, key=lambda item: (item["payload_base"], item["table_offset"]))
 
 
@@ -275,7 +328,9 @@ def _container_metadata(blob: mmap.mmap) -> Optional[Dict[str, object]]:
         result["declared_bounds_ok"] = valid
         if valid:
             result["payload_sha256"] = hashlib.sha256(blob[header_size : header_size + payload_size]).hexdigest()
-            result["component_tables"] = _discover_component_tables(blob, [header_size])
+            tables = _discover_component_tables(blob, [header_size])
+            result["component_tables"] = [table for table in tables if table["valid"]]
+            result["rejected_component_tables"] = [table for table in tables if not table["valid"]]
     return result
 
 
@@ -312,6 +367,76 @@ def _partition_signature(container: Optional[Dict[str, object]], filesystems: Li
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _run_limited(
+    command: List[str], timeout_seconds: int, stdout_limit: int, stderr_limit: int
+) -> Dict[str, object]:
+    """Run a metadata reader with bounded time and captured output."""
+    process = subprocess.Popen(
+        command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True
+    )
+    buffers = {"stdout": bytearray(), "stderr": bytearray()}
+    limits = {"stdout": stdout_limit, "stderr": stderr_limit}
+    overflow: List[str] = []
+
+    def kill_process_group() -> None:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            try:
+                process.kill()
+            except OSError:
+                pass
+
+    def read_pipe(name: str, pipe: BinaryIO) -> None:
+        while True:
+            chunk = pipe.read(64 * 1024)
+            if not chunk:
+                return
+            remaining = limits[name] - len(buffers[name])
+            if remaining > 0:
+                buffers[name].extend(chunk[:remaining])
+            if len(chunk) > remaining:
+                overflow.append(name)
+                kill_process_group()
+                return
+
+    threads = [
+        threading.Thread(target=read_pipe, args=("stdout", process.stdout), daemon=True),
+        threading.Thread(target=read_pipe, args=("stderr", process.stderr), daemon=True),
+    ]
+    for thread in threads:
+        thread.start()
+    timed_out = False
+    try:
+        returncode = process.wait(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        timed_out = True
+        kill_process_group()
+        returncode = process.wait()
+    for thread in threads:
+        thread.join(timeout=1)
+    if any(thread.is_alive() for thread in threads):
+        overflow.append("pipe lifetime")
+        kill_process_group()
+        for thread in threads:
+            thread.join(timeout=1)
+    if process.stdout:
+        process.stdout.close()
+    if process.stderr:
+        process.stderr.close()
+    failure = None
+    if timed_out:
+        failure = f"timed out after {timeout_seconds} seconds"
+    elif overflow:
+        failure = f"output limit exceeded for {', '.join(sorted(set(overflow)))}"
+    return {
+        "returncode": returncode,
+        "stdout": bytes(buffers["stdout"]),
+        "stderr": bytes(buffers["stderr"]),
+        "failure": failure,
+    }
+
+
 def _inventory_squashfs(path: Path, offset: int) -> Dict[str, object]:
     tool = shutil.which("unsquashfs")
     if not tool:
@@ -321,23 +446,31 @@ def _inventory_squashfs(path: Path, offset: int) -> Dict[str, object]:
             "entries": [],
             "elf_entries": [],
         }
-    listed = subprocess.run(
+    listed = _run_limited(
         [tool, "-lln", "-o", str(offset), str(path)],
-        check=False,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        UNSQUASHFS_LIST_TIMEOUT_SECONDS,
+        UNSQUASHFS_LIST_STDOUT_LIMIT,
+        UNSQUASHFS_STDERR_LIMIT,
     )
-    if listed.returncode != 0:
+    if listed["failure"]:
         return {
             "status": "UNAVAILABLE",
-            "reason": f"unsquashfs listing failed with exit code {listed.returncode}",
+            "reason": f"unsquashfs listing {listed['failure']}",
+            "entries": [],
+            "elf_entries": [],
+        }
+    if listed["returncode"] != 0:
+        return {
+            "status": "UNAVAILABLE",
+            "reason": f"unsquashfs listing failed with exit code {listed['returncode']}",
             "entries": [],
             "elf_entries": [],
         }
     entries: List[Dict[str, object]] = []
     elf_entries: List[Dict[str, object]] = []
-    for line in listed.stdout.splitlines():
+    skipped_elf_checks: List[Dict[str, str]] = []
+    for raw_line in listed["stdout"].splitlines():
+        line = raw_line.decode("utf-8", "replace")
         parts = line.split(None, 5)
         if len(parts) != 6 or not parts[0] or parts[0][0] not in "-dlbcps":
             continue
@@ -362,23 +495,41 @@ def _inventory_squashfs(path: Path, offset: int) -> Dict[str, object]:
             "modified": f"{modified_date} {modified_time}",
         }
         entries.append(entry)
-        if mode[0] != "-" or size is None or size > 64 * 1024 * 1024:
+        if mode[0] != "-" or size is None or size > MAX_ELF_BYTES:
             continue
-        content = subprocess.run(
+        content = _run_limited(
             [tool, "-cat", "-o", str(offset), str(path), relative],
-            check=False,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            UNSQUASHFS_CAT_TIMEOUT_SECONDS,
+            size + 1,
+            UNSQUASHFS_STDERR_LIMIT,
         )
-        if content.returncode == 0 and content.stdout.startswith(ELF_MAGIC):
+        if content["failure"]:
+            skipped_elf_checks.append({"path": relative, "reason": str(content["failure"])})
+            continue
+        if content["returncode"] != 0:
+            skipped_elf_checks.append(
+                {"path": relative, "reason": f"unsquashfs cat exited {content['returncode']}"}
+            )
+            continue
+        content_bytes = content["stdout"]
+        if len(content_bytes) != size:
+            skipped_elf_checks.append({"path": relative, "reason": "listed size did not match streamed size"})
+            continue
+        if content_bytes.startswith(ELF_MAGIC):
             elf_entries.append(
                 {
                     "path": relative,
-                    "size": len(content.stdout),
-                    "sha256": hashlib.sha256(content.stdout).hexdigest(),
+                    "size": len(content_bytes),
+                    "sha256": hashlib.sha256(content_bytes).hexdigest(),
                 }
             )
-    return {"status": "COMPLETE", "entries": entries, "elf_entries": elf_entries}
+    return {
+        "status": "PARTIAL" if skipped_elf_checks else "COMPLETE",
+        "reason": "one or more regular files could not be boundedly inspected" if skipped_elf_checks else None,
+        "entries": entries,
+        "elf_entries": elf_entries,
+        "skipped_elf_checks": skipped_elf_checks,
+    }
 
 
 def inspect_binary(path: Path, logical_name: str) -> Dict[str, object]:
@@ -401,18 +552,27 @@ def inspect_binary(path: Path, logical_name: str) -> Dict[str, object]:
         container = _container_metadata(blob)
         valid_filesystems = [entry for entry in filesystems if entry["valid"]]
         elf_entries: List[Dict[str, object]] = []
-        inventory_available = True
+        inventory_statuses: List[str] = []
         for filesystem in valid_filesystems:
             inventory = _inventory_squashfs(path, int(filesystem["offset"]))
+            inventory_statuses.append(str(inventory["status"]))
             filesystem["inventory"] = {
                 "status": inventory["status"],
                 "reason": inventory.get("reason"),
                 "entries": inventory["entries"],
+                "skipped_elf_checks": inventory.get("skipped_elf_checks", []),
             }
-            if inventory["status"] != "COMPLETE":
-                inventory_available = False
             for elf in inventory["elf_entries"]:
                 elf_entries.append({"filesystem_offset": filesystem["offset"], **elf})
+        if all(status == "COMPLETE" for status in inventory_statuses):
+            elf_status = "COMPLETE"
+            elf_reason = None
+        elif inventory_statuses and all(status == "UNAVAILABLE" for status in inventory_statuses):
+            elf_status = "UNAVAILABLE"
+            elf_reason = "the SquashFS inventory backend was unavailable for every filesystem"
+        else:
+            elf_status = "PARTIAL"
+            elf_reason = "one or more filesystem ELF inventories were unavailable or partial"
         return {
             "name": logical_name,
             **hash_file(path),
@@ -426,8 +586,8 @@ def inspect_binary(path: Path, logical_name: str) -> Dict[str, object]:
             ),
             "hardware_clues": _hardware_clues(blob),
             "elf_inventory": {
-                "status": "COMPLETE" if inventory_available else "UNAVAILABLE",
-                "reason": None if inventory_available else "one or more filesystems lack the optional read-only SquashFS inventory backend",
+                "status": elf_status,
+                "reason": elf_reason,
                 "entries": elf_entries,
             },
         }
@@ -492,12 +652,29 @@ def inspect_input(path: Path) -> Dict[str, object]:
     return report
 
 
+def validate_output_path(input_path: Path, output_path: Path) -> None:
+    """Refuse any output pathname that resolves to the input inode."""
+    resolved_input = input_path.resolve(strict=True)
+    resolved_output = output_path.resolve(strict=False)
+    if resolved_output == resolved_input:
+        raise InspectionError("output path aliases the input")
+    if output_path.exists() or output_path.is_symlink():
+        try:
+            if os.path.samefile(resolved_input, output_path):
+                raise InspectionError("output path aliases the input inode")
+        except FileNotFoundError:
+            pass
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Safely inspect firmware archives without extraction or execution")
     parser.add_argument("input", type=Path, help="ZIP archive or BIN image")
     parser.add_argument("--output", type=Path, help="Write commit-safe JSON metadata here")
     args = parser.parse_args()
-    report = inspect_input(args.input.resolve())
+    input_path = args.input.resolve()
+    if args.output:
+        validate_output_path(input_path, args.output)
+    report = inspect_input(input_path)
     encoded = json.dumps(report, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
