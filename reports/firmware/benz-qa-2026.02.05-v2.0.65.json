@@ -1,0 +1,615 @@
+{
+  "members": [
+    {
+      "compressed_size": 135,
+      "crc32": "d4a25cf6",
+      "md5": "1be6d0ee61fd202dc326d75e5f3b2757",
+      "name": "__MACOSX/._QD507-Benz-QA-2026.02.05-v2.0.65",
+      "sha256": "b46e5a7f90dde34893f4506311c7a6403d58bd90ae2ae149bd6031a523717bb7",
+      "size": 212
+    },
+    {
+      "compressed_size": 68793879,
+      "crc32": "d7847d55",
+      "inspection": {
+        "container": null,
+        "elf_inventory": {
+          "entries": [],
+          "reason": "one or more filesystems lack the optional read-only SquashFS inventory backend",
+          "status": "UNAVAILABLE"
+        },
+        "embedded_images": [
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 955,
+            "entry_address": 0,
+            "header_crc_ok": true,
+            "image_type": 6,
+            "load_address": 0,
+            "name": "Init ISP script",
+            "offset": 1048608,
+            "os": 5,
+            "timestamp": 1770261421,
+            "total_size": 1019,
+            "valid": true
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 3567240,
+            "entry_address": 77594688,
+            "header_crc_ok": true,
+            "image_type": 1,
+            "load_address": 77594624,
+            "name": "ecos_gemini_disc_0205_1111",
+            "offset": 1971200,
+            "os": 5,
+            "timestamp": 1770261097,
+            "total_size": 3567304,
+            "valid": true
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 4124672,
+            "entry_address": 4227072,
+            "header_crc_ok": true,
+            "image_type": 2,
+            "load_address": 4227072,
+            "name": "Linux-4.9.217",
+            "offset": 5538816,
+            "os": 5,
+            "timestamp": 1770261139,
+            "total_size": 4124736,
+            "valid": true
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 46309,
+            "entry_address": 0,
+            "header_crc_ok": true,
+            "image_type": 6,
+            "load_address": 0,
+            "name": "ISP script for ISPBOOOT.BIN",
+            "offset": 96648192,
+            "os": 5,
+            "timestamp": 1770261419,
+            "total_size": 46373,
+            "valid": true
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 34766,
+            "entry_address": 0,
+            "header_crc_ok": true,
+            "image_type": 6,
+            "load_address": 0,
+            "name": "ISP script for ISPBOOOT.BIN",
+            "offset": 96695296,
+            "os": 5,
+            "timestamp": 1770261421,
+            "total_size": 34830,
+            "valid": true
+          }
+        ],
+        "filesystems": [
+          {
+            "block_log": 15,
+            "block_size": 32768,
+            "bounds_ok": true,
+            "bytes_used": 3879172,
+            "compression_id": 3,
+            "flags": 1088,
+            "fragments": 15,
+            "id_count": 1,
+            "inode_count": 486,
+            "inventory": {
+              "entries": [],
+              "reason": "unsquashfs is not installed; superblock metadata remains available",
+              "status": "UNAVAILABLE"
+            },
+            "mkfs_time": 1770261415,
+            "offset": 9664512,
+            "valid": true,
+            "version": "4.0"
+          },
+          {
+            "block_log": 15,
+            "block_size": 32768,
+            "bounds_ok": true,
+            "bytes_used": 46325438,
+            "compression_id": 3,
+            "flags": 1088,
+            "fragments": 313,
+            "id_count": 1,
+            "inode_count": 1490,
+            "inventory": {
+              "entries": [],
+              "reason": "unsquashfs is not installed; superblock metadata remains available",
+              "status": "UNAVAILABLE"
+            },
+            "mkfs_time": 1770261416,
+            "offset": 13547520,
+            "valid": true,
+            "version": "4.0"
+          },
+          {
+            "block_log": 15,
+            "block_size": 32768,
+            "bounds_ok": true,
+            "bytes_used": 21316508,
+            "compression_id": 3,
+            "flags": 1088,
+            "fragments": 39,
+            "id_count": 1,
+            "inode_count": 239,
+            "inventory": {
+              "entries": [],
+              "reason": "unsquashfs is not installed; superblock metadata remains available",
+              "status": "UNAVAILABLE"
+            },
+            "mkfs_time": 1770261415,
+            "offset": 59873280,
+            "valid": true,
+            "version": "4.0"
+          }
+        ],
+        "hardware_clues": [
+          "GEMINI",
+          "8368-XU"
+        ],
+        "md5": "5dd60aaee29ddf232c5e2bb664de62c3",
+        "name": "QD507-Benz-QA-2026.02.05-v2.0.65/ISPBOOOT.BIN",
+        "partition_signature": "9f5bc29ee4d00f4ef20089a8b7837388936ac54f1a4ec467326043fe28605e8e",
+        "rejected_squashfs_candidates": [
+          {
+            "block_log": 48896,
+            "block_size": 4157117440,
+            "bounds_ok": false,
+            "bytes_used": 17869835961845610494,
+            "compression_id": 48400,
+            "error": "invalid SquashFS version, geometry, or bounds",
+            "flags": 38209,
+            "fragments": 2952985539,
+            "id_count": 49227,
+            "inode_count": 4293918720,
+            "mkfs_time": 1275311379,
+            "offset": 6265032,
+            "valid": false,
+            "version": "46392.17925"
+          },
+          {
+            "block_log": 49265,
+            "block_size": 3228649490,
+            "bounds_ok": false,
+            "bytes_used": 13866945441904481438,
+            "compression_id": 18595,
+            "error": "invalid SquashFS version, geometry, or bounds",
+            "flags": 18680,
+            "fragments": 3228649580,
+            "id_count": 49265,
+            "inode_count": 3228649321,
+            "mkfs_time": 3228649390,
+            "offset": 6265908,
+            "valid": false,
+            "version": "18783.49265"
+          }
+        ],
+        "rejected_uimage_candidates": [
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": null,
+            "data_size": 443044,
+            "entry_address": 15728704,
+            "error": "header CRC validation failed",
+            "header_crc_ok": false,
+            "image_type": 90,
+            "load_address": 15728704,
+            "name": "uboot_gemini_evb0205_1111",
+            "offset": 65536,
+            "os": 5,
+            "timestamp": 1770261096,
+            "total_size": 443108,
+            "valid": false
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": null,
+            "data_size": 443044,
+            "entry_address": 15728704,
+            "error": "header CRC validation failed",
+            "header_crc_ok": false,
+            "image_type": 90,
+            "load_address": 15728704,
+            "name": "uboot_gemini_evb0205_1111",
+            "offset": 1084416,
+            "os": 5,
+            "timestamp": 1770261096,
+            "total_size": 443108,
+            "valid": false
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": null,
+            "data_size": 443044,
+            "entry_address": 15728704,
+            "error": "header CRC validation failed",
+            "header_crc_ok": false,
+            "image_type": 90,
+            "load_address": 15728704,
+            "name": "uboot_gemini_evb0205_1111",
+            "offset": 1527808,
+            "os": 5,
+            "timestamp": 1770261096,
+            "total_size": 443108,
+            "valid": false
+          }
+        ],
+        "sha256": "6f14a55a2cf2ed1e41d341facaf73484e0b385e6c81ae8fbfb2117c0fc3e5070",
+        "size": 97191936
+      },
+      "md5": "5dd60aaee29ddf232c5e2bb664de62c3",
+      "name": "QD507-Benz-QA-2026.02.05-v2.0.65/ISPBOOOT.BIN",
+      "sha256": "6f14a55a2cf2ed1e41d341facaf73484e0b385e6c81ae8fbfb2117c0fc3e5070",
+      "size": 97191936
+    },
+    {
+      "compressed_size": 135,
+      "crc32": "d4a25cf6",
+      "inspection": {
+        "container": null,
+        "elf_inventory": {
+          "entries": [],
+          "reason": null,
+          "status": "COMPLETE"
+        },
+        "embedded_images": [],
+        "filesystems": [],
+        "hardware_clues": [],
+        "md5": "1be6d0ee61fd202dc326d75e5f3b2757",
+        "name": "__MACOSX/QD507-Benz-QA-2026.02.05-v2.0.65/._ISPBOOOT.BIN",
+        "partition_signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rejected_squashfs_candidates": [],
+        "rejected_uimage_candidates": [],
+        "sha256": "b46e5a7f90dde34893f4506311c7a6403d58bd90ae2ae149bd6031a523717bb7",
+        "size": 212
+      },
+      "md5": "1be6d0ee61fd202dc326d75e5f3b2757",
+      "name": "__MACOSX/QD507-Benz-QA-2026.02.05-v2.0.65/._ISPBOOOT.BIN",
+      "sha256": "b46e5a7f90dde34893f4506311c7a6403d58bd90ae2ae149bd6031a523717bb7",
+      "size": 212
+    },
+    {
+      "compressed_size": 66583012,
+      "crc32": "f82c7e15",
+      "inspection": {
+        "container": {
+          "component_tables": [
+            {
+              "components": [
+                {
+                  "absolute_offset": 17408,
+                  "calculated_md5": "728d6c70130ac1bd7595dd812009fb88",
+                  "md5_ok": true,
+                  "name": "spapp.",
+                  "relative_offset": 16384,
+                  "size": 21319680,
+                  "table_md5": "728d6c70130ac1bd7595dd812009fb88",
+                  "table_offset": 3200
+                },
+                {
+                  "absolute_offset": 21337088,
+                  "calculated_md5": "4968fbc5f8c9f7fe9fc29d7f3efeb8bb",
+                  "md5_ok": true,
+                  "name": "spsdk.",
+                  "relative_offset": 21336064,
+                  "size": 46325760,
+                  "table_md5": "4968fbc5f8c9f7fe9fc29d7f3efeb8bb",
+                  "table_offset": 3328
+                },
+                {
+                  "absolute_offset": 67662848,
+                  "calculated_md5": "8a165af16e03c5c9ae56e5eefb8c73aa",
+                  "md5_ok": true,
+                  "name": "rootfs.",
+                  "relative_offset": 67661824,
+                  "size": 3883008,
+                  "table_md5": "8a165af16e03c5c9ae56e5eefb8c73aa",
+                  "table_offset": 3456
+                },
+                {
+                  "absolute_offset": 71545856,
+                  "calculated_md5": "9df52c63f7457c62b1e85c1f6c7f193e",
+                  "md5_ok": true,
+                  "name": "kernel",
+                  "relative_offset": 71544832,
+                  "size": 4125696,
+                  "table_md5": "9df52c63f7457c62b1e85c1f6c7f193e",
+                  "table_offset": 3584
+                },
+                {
+                  "absolute_offset": 75671552,
+                  "calculated_md5": "bd9f77a9cd6222bf73fb6c45a215c77c",
+                  "md5_ok": true,
+                  "name": "uboot2",
+                  "relative_offset": 75670528,
+                  "size": 443392,
+                  "table_md5": "bd9f77a9cd6222bf73fb6c45a215c77c",
+                  "table_offset": 3712
+                },
+                {
+                  "absolute_offset": 76114944,
+                  "calculated_md5": "a87345ff6a4106d9740010523fcbb77f",
+                  "md5_ok": true,
+                  "name": "ecos",
+                  "relative_offset": 76113920,
+                  "size": 3567616,
+                  "table_md5": "a87345ff6a4106d9740010523fcbb77f",
+                  "table_offset": 3840
+                }
+              ],
+              "payload_base": 1024,
+              "record_size": 128,
+              "table_offset": 3200
+            }
+          ],
+          "declared_bounds_ok": true,
+          "declared_header_size": 1024,
+          "declared_payload_size": 79735808,
+          "format": "GEMINI",
+          "magic": "GEMINI",
+          "payload_name": "ISP_UPDT.BIN",
+          "payload_sha256": "1271b3661b0ec4ddfe4377b5b3a02fa1cf2f1ccd78070177cdba7045f6f4faa9",
+          "variant": "QA",
+          "version": "12.0.1.0.0.0.0.0"
+        },
+        "elf_inventory": {
+          "entries": [],
+          "reason": "one or more filesystems lack the optional read-only SquashFS inventory backend",
+          "status": "UNAVAILABLE"
+        },
+        "embedded_images": [
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 798,
+            "entry_address": 0,
+            "header_crc_ok": true,
+            "image_type": 6,
+            "load_address": 0,
+            "name": "Init update script",
+            "offset": 1056,
+            "os": 5,
+            "timestamp": 1770261444,
+            "total_size": 862,
+            "valid": true
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 4124672,
+            "entry_address": 4227072,
+            "header_crc_ok": true,
+            "image_type": 2,
+            "load_address": 4227072,
+            "name": "Linux-4.9.217",
+            "offset": 71545856,
+            "os": 5,
+            "timestamp": 1770261139,
+            "total_size": 4124736,
+            "valid": true
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 3567240,
+            "entry_address": 77594688,
+            "header_crc_ok": true,
+            "image_type": 1,
+            "load_address": 77594624,
+            "name": "ecos_gemini_disc_0205_1111",
+            "offset": 76114944,
+            "os": 5,
+            "timestamp": 1770261097,
+            "total_size": 3567304,
+            "valid": true
+          },
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": true,
+            "data_size": 53425,
+            "entry_address": 0,
+            "header_crc_ok": true,
+            "image_type": 6,
+            "load_address": 0,
+            "name": "main update script",
+            "offset": 79682560,
+            "os": 5,
+            "timestamp": 1770261444,
+            "total_size": 53489,
+            "valid": true
+          }
+        ],
+        "filesystems": [
+          {
+            "block_log": 15,
+            "block_size": 32768,
+            "bounds_ok": true,
+            "bytes_used": 21316508,
+            "compression_id": 3,
+            "flags": 1088,
+            "fragments": 39,
+            "id_count": 1,
+            "inode_count": 239,
+            "inventory": {
+              "entries": [],
+              "reason": "unsquashfs is not installed; superblock metadata remains available",
+              "status": "UNAVAILABLE"
+            },
+            "mkfs_time": 1770261415,
+            "offset": 17408,
+            "valid": true,
+            "version": "4.0"
+          },
+          {
+            "block_log": 15,
+            "block_size": 32768,
+            "bounds_ok": true,
+            "bytes_used": 46325438,
+            "compression_id": 3,
+            "flags": 1088,
+            "fragments": 313,
+            "id_count": 1,
+            "inode_count": 1490,
+            "inventory": {
+              "entries": [],
+              "reason": "unsquashfs is not installed; superblock metadata remains available",
+              "status": "UNAVAILABLE"
+            },
+            "mkfs_time": 1770261416,
+            "offset": 21337088,
+            "valid": true,
+            "version": "4.0"
+          },
+          {
+            "block_log": 15,
+            "block_size": 32768,
+            "bounds_ok": true,
+            "bytes_used": 3879172,
+            "compression_id": 3,
+            "flags": 1088,
+            "fragments": 15,
+            "id_count": 1,
+            "inode_count": 486,
+            "inventory": {
+              "entries": [],
+              "reason": "unsquashfs is not installed; superblock metadata remains available",
+              "status": "UNAVAILABLE"
+            },
+            "mkfs_time": 1770261415,
+            "offset": 67662848,
+            "valid": true,
+            "version": "4.0"
+          }
+        ],
+        "hardware_clues": [
+          "GEMINI",
+          "8368-XU"
+        ],
+        "md5": "108c16fb1df40a43c11c933e291f8734",
+        "name": "QD507-Benz-QA-2026.02.05-v2.0.65/GEMINI_PACK.BIN",
+        "partition_signature": "127e335119cd96077556f1874544bf665ac4eb97abde181bdde026294445010c",
+        "rejected_squashfs_candidates": [
+          {
+            "block_log": 48896,
+            "block_size": 4157117440,
+            "bounds_ok": false,
+            "bytes_used": 17869835961845610494,
+            "compression_id": 48400,
+            "error": "invalid SquashFS version, geometry, or bounds",
+            "flags": 38209,
+            "fragments": 2952985539,
+            "id_count": 49227,
+            "inode_count": 4293918720,
+            "mkfs_time": 1275311379,
+            "offset": 72272072,
+            "valid": false,
+            "version": "46392.17925"
+          },
+          {
+            "block_log": 49265,
+            "block_size": 3228649490,
+            "bounds_ok": false,
+            "bytes_used": 13866945441904481438,
+            "compression_id": 18595,
+            "error": "invalid SquashFS version, geometry, or bounds",
+            "flags": 18680,
+            "fragments": 3228649580,
+            "id_count": 49265,
+            "inode_count": 3228649321,
+            "mkfs_time": 3228649390,
+            "offset": 72272948,
+            "valid": false,
+            "version": "18783.49265"
+          }
+        ],
+        "rejected_uimage_candidates": [
+          {
+            "architecture": 2,
+            "compression": 0,
+            "data_crc_ok": null,
+            "data_size": 443044,
+            "entry_address": 15728704,
+            "error": "header CRC validation failed",
+            "header_crc_ok": false,
+            "image_type": 90,
+            "load_address": 15728704,
+            "name": "uboot_gemini_evb0205_1111",
+            "offset": 75671552,
+            "os": 5,
+            "timestamp": 1770261096,
+            "total_size": 443108,
+            "valid": false
+          }
+        ],
+        "sha256": "8d449d4c9887ae6b573495b8798929edfe7543fcddd2d6380ac247959994587f",
+        "size": 79736832
+      },
+      "md5": "108c16fb1df40a43c11c933e291f8734",
+      "name": "QD507-Benz-QA-2026.02.05-v2.0.65/GEMINI_PACK.BIN",
+      "sha256": "8d449d4c9887ae6b573495b8798929edfe7543fcddd2d6380ac247959994587f",
+      "size": 79736832
+    },
+    {
+      "compressed_size": 135,
+      "crc32": "d4a25cf6",
+      "inspection": {
+        "container": null,
+        "elf_inventory": {
+          "entries": [],
+          "reason": null,
+          "status": "COMPLETE"
+        },
+        "embedded_images": [],
+        "filesystems": [],
+        "hardware_clues": [],
+        "md5": "1be6d0ee61fd202dc326d75e5f3b2757",
+        "name": "__MACOSX/QD507-Benz-QA-2026.02.05-v2.0.65/._GEMINI_PACK.BIN",
+        "partition_signature": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "rejected_squashfs_candidates": [],
+        "rejected_uimage_candidates": [],
+        "sha256": "b46e5a7f90dde34893f4506311c7a6403d58bd90ae2ae149bd6031a523717bb7",
+        "size": 212
+      },
+      "md5": "1be6d0ee61fd202dc326d75e5f3b2757",
+      "name": "__MACOSX/QD507-Benz-QA-2026.02.05-v2.0.65/._GEMINI_PACK.BIN",
+      "sha256": "b46e5a7f90dde34893f4506311c7a6403d58bd90ae2ae149bd6031a523717bb7",
+      "size": 212
+    }
+  ],
+  "mode": "read-only-metadata",
+  "schema_version": 1,
+  "source": {
+    "md5": "47d04fdbd15aab84c574f5713fa6c5f3",
+    "name": "QD507-Benz-QA-2026.02.05-v2.0.65.zip",
+    "sha256": "7c565eb53039c937e0a280955f1ed8b22151dd07ccebf70094cd7105833602d5",
+    "size": 135378758,
+    "type": "zip"
+  },
+  "warnings": []
+}

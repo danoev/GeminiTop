@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "id": "w176-ntg5",
+  "label": "Installed Mercedes W176 / NTG5 target",
+  "profile_kind": "physical-target-unprobed",
+  "compatibility_claim": false,
+  "sources": ["owner-reported on-screen version strings; Stage-1 probe not yet run"],
+  "facts": {
+    "vehicle_family": {"state": "CONFIRMED", "value": "Mercedes W176 / NTG5"},
+    "reported_system_version": {"state": "CONFIRMED", "value": "2025.09.11-S7-qa-v2.0.61"},
+    "reported_mcu_version": {"state": "CONFIRMED", "value": "Z-2.01-250521"},
+    "board_identifier": {"state": "UNKNOWN", "value": null},
+    "hardware_identity": {"state": "UNKNOWN", "value": null},
+    "kernel_release": {"state": "UNKNOWN", "value": null},
+    "partition_layout": {"state": "UNKNOWN", "value": null},
+    "nvm_bytes": {"state": "UNKNOWN", "value": null},
+    "framebuffer": {"state": "UNKNOWN", "value": null},
+    "touch": {"state": "UNKNOWN", "value": null},
+    "usb_handler_hash": {"state": "UNKNOWN", "value": null},
+    "application_names": {"state": "UNKNOWN", "value": null},
+    "audio_devices": {"state": "UNKNOWN", "value": null},
+    "illumination_protocol": {"state": "UNKNOWN", "value": null}
+  },
+  "match": {}
+}

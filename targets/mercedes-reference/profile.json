@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "mercedes-reference",
+  "label": "Mercedes/Benz QA v2.0.65 static reference",
+  "profile_kind": "reference",
+  "compatibility_claim": false,
+  "sources": [
+    "QD507-Benz-QA-2026.02.05-v2.0.65.zip (local, not committed)",
+    "reports/firmware/benz-qa-2026.02.05-v2.0.65.json"
+  ],
+  "facts": {
+    "vehicle_family": {"state": "REFERENCE_ONLY", "value": "Mercedes-Benz"},
+    "archive_label": {"state": "REFERENCE_ONLY", "value": "QD507-Benz-QA-2026.02.05-v2.0.65"},
+    "archive_sha256": {"state": "REFERENCE_ONLY", "value": "7c565eb53039c937e0a280955f1ed8b22151dd07ccebf70094cd7105833602d5"},
+    "gemini_pack_sha256": {"state": "REFERENCE_ONLY", "value": "8d449d4c9887ae6b573495b8798929edfe7543fcddd2d6380ac247959994587f"},
+    "ispbooot_sha256": {"state": "REFERENCE_ONLY", "value": "6f14a55a2cf2ed1e41d341facaf73484e0b385e6c81ae8fbfb2117c0fc3e5070"},
+    "gemini_container_version": {"state": "REFERENCE_ONLY", "value": "12.0.1.0.0.0.0.0"},
+    "gemini_partition_signature": {"state": "REFERENCE_ONLY", "value": "127e335119cd96077556f1874544bf665ac4eb97abde181bdde026294445010c"},
+    "isp_partition_signature": {"state": "REFERENCE_ONLY", "value": "9f5bc29ee4d00f4ef20089a8b7837388936ac54f1a4ec467326043fe28605e8e"},
+    "board_identifier": {"state": "UNKNOWN", "value": null},
+    "embedded_identity_clues": {"state": "REFERENCE_ONLY", "value": ["GEMINI", "8368-XU"]},
+    "kernel_release": {"state": "REFERENCE_ONLY", "value": "4.9.217", "basis": "validated uImage name"},
+    "nvm_bytes": {"state": "UNKNOWN", "value": null},
+    "framebuffer": {"state": "UNKNOWN", "value": null},
+    "touch": {"state": "UNKNOWN", "value": null},
+    "application_names": {"state": "UNKNOWN", "value": null}
+  },
+  "match": {
+    "kernel.release": "4.9.217"
+  }
+}

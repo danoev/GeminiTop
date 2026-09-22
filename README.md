@@ -4,9 +4,26 @@
 
 Download the [Latest Release](https://github.com/martexas/GeminiTop/releases) - slap it on a FAT32 formatted USB stick 8GB and below, then plug it in the screen!
 
+## Target status
+
+The original project behavior is preserved as an **Audi reference target**.
+Current development separates generic Gemini/S7-QA mechanisms from target
+evidence. A Mercedes firmware archive may be inspected as static reference
+material, while the installed W176/NTG5 unit remains unprobed and unsupported
+for active launcher/runtime replacement.
+
+See:
+
+- `docs/platform/target-assumptions.md`
+- `docs/platform/target-architecture.md`
+- `docs/platform/firmware-safety.md`
+- `docs/platform/benz-reference.md`
+- `docs/workstreams/w176-platform.md`
+- `tools/w176-probe/README.md`
+
 ## Quick Note!
 
-Yes, I know this is all spaghetti code and it's a miracle any of this runs in the first place. The firmware extractor/repacker probably only works for my specific Audi "QD513-QD515-AUDI-incell-S7-QA-2026.02.05-v2.0.65.zip", because the offsets will not match a different .zip file.
+Yes, I know this is all spaghetti code and it's a miracle any of this runs in the first place. The legacy firmware extractor/repacker was written for the Audi `QD513-QD515-AUDI-incell-S7-QA-2026.02.05-v2.0.65.zip` layout. Do not use those fixed-offset scripts for another target. The supported cross-target workflow is the read-only `firmware_tools/scripts/inspect_firmware.py` metadata inspector.
 
 Feel free to fork this and get Codex/Claude to make the adjustments for your changes or a new game/app! This was a fun "can we do it" project and you can see how it was created in my YouTube video: https://www.youtube.com/watch?v=lwifwcN865Y
 
