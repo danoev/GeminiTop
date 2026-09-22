@@ -8,7 +8,8 @@ Every item uses one of: CONFIRMED, REFERENCE ONLY, INFERENCE, or UNKNOWN.
   `Z-2.01-250521`.
 - REFERENCE ONLY: the Benz v2.0.65 archive contains a Gemini container, a
   validated Linux 4.9.217 uImage, and SquashFS images. Separately, the original
-  Audi `recon.txt` shows a Gemini/ARMv7 runtime and stock `Launcher`.
+  Audi reconnaissance capture showed a Gemini/ARMv7 runtime and stock
+  `Launcher`; the raw capture has been removed from Git.
 - INFERENCE: validated image-format and host-analysis code can be shared across
   S7-QA variants.
 - UNKNOWN: installed board identity, partition map, ABI, framebuffer, touch,

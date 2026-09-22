@@ -52,6 +52,7 @@ firmware_tools/REPACKED/
 stage1-probe/
 stage1-probe-*/
 probe-results/
+recon.txt
 nvm-capture*/
 userdata-capture*/
 user-data-capture*/
