@@ -22,6 +22,15 @@ BIN members remain outside Git.
 - Embedded string clues include `GEMINI` and `8368-XU`; neither is an
   authoritative retail board mapping.
 
-The inspection host did not have `unsquashfs`, so filesystem-path and ELF-hash
-inventories are explicitly `UNAVAILABLE` in this report. The inspector supports
-that read-only inventory when the tool is installed; it never executes an ELF.
+A follow-up read-only inspection with `unsquashfs` 4.7.5 completed all six
+filesystem inventories. Each main BIN contains 2,215 listed filesystem entries
+and 651 ELF path/size/SHA-256 records; the corresponding inventories in
+`ISPBOOOT.BIN` and `GEMINI_PACK.BIN` are identical after accounting for their
+different embedded offsets. Within either BIN, the 651 ELF records contain 623
+distinct content hashes because some files have identical content.
+
+`unsquashfs` was used only to list paths and stream individual regular files to
+the inspector for ELF-magic detection and hashing. No filesystem tree was
+retained and no ARM binary was executed or emulated. These inventories remain
+REFERENCE ONLY and do not establish the installed W176 unit's filesystem,
+binary set, ABI, or hardware identity.
