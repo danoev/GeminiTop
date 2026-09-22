@@ -1,6 +1,6 @@
-# GeminiTop — Mercedes-Benz RoadTop Engineering Fork
+# GeminiTop — Mercedes-Benz RoadTop Fork
 
-> A Mercedes-Benz focused fork of [martexas/GeminiTop](https://github.com/martexas/GeminiTop) for reverse engineering, understanding and extending RoadTop Linux display units installed in Mercedes vehicles.
+> A Mercedes-Benz-focused fork of [martexas/GeminiTop](https://github.com/martexas/GeminiTop) for understanding and extending RoadTop Linux display units in Mercedes-Benz vehicles.
 
 ## Project status
 
@@ -8,9 +8,9 @@
 
 This repository is not currently a plug-and-play Mercedes GeminiTop release.
 
-The immediate goal is to understand the RoadTop hardware and software platform safely, establish the exact characteristics of the installed Mercedes unit, and then build a target-aware compatibility layer rather than assuming that the original Audi GeminiTop target and the Mercedes hardware are interchangeable.
+The immediate goal is to understand the installed RoadTop hardware and software safely, establish its exact characteristics, and develop a Mercedes-Benz compatibility layer based on target evidence. Support for other Mercedes-Benz vehicles, NTG generations, screens, boards, MCUs, or firmware is not assumed.
 
-The primary development target is currently a RoadTop Linux screen installed in a Mercedes-Benz W176 A45 AMG using the factory NTG5*1 system.
+The initial reference implementation and current primary development target is a RoadTop S7-QA Linux display installed in a Mercedes-Benz W176 A45 AMG using the factory NTG5*1 system. Other Mercedes-Benz targets may be considered only after their compatibility is established independently.
 
 Installed RoadTop software currently reports:
 
@@ -344,7 +344,7 @@ docs/platform/
     RoadTop platform and target research
 
 docs/workstreams/
-    Mercedes/W176 engineering workstreams
+    Mercedes-Benz platform workstreams, beginning with W176
 
 reports/firmware/
     Commit-safe firmware metadata reports
@@ -423,7 +423,7 @@ Mercedes firmware reference
       +-----+-----+
             |
             v
-   Mercedes runtime layer
+Mercedes compatibility layer
             |
             v
  future GeminiTop deployment

@@ -1,6 +1,6 @@
 ---
 name: Hardware report
-about: Report a Mercedes/RoadTop hardware target or Stage-1 probe result
+about: Report a Mercedes-Benz RoadTop hardware target or Stage-1 probe result
 title: "[Hardware] "
 labels: hardware
 assignees: ""

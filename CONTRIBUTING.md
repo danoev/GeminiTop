@@ -4,6 +4,8 @@ Thank you for considering contributing to this project.
 
 This repository is a Mercedes-Benz-focused engineering fork of [martexas/GeminiTop](https://github.com/martexas/GeminiTop), currently centred on understanding and extending RoadTop Linux display units installed in Mercedes-Benz vehicles.
 
+The W176 + NTG5*1 unit is the first reference implementation and current development target. Contributions about other Mercedes-Benz chassis, NTG generations, screens, boards, MCUs, or firmware are welcome as evidence, but do not establish compatibility on their own.
+
 The primary development target is currently:
 
 ```text
@@ -103,7 +105,7 @@ Mercedes firmware reference analysis
        +--------+--------+
                 |
                 v
-      Mercedes runtime layer
+   Mercedes compatibility layer
                 |
                 v
    future GeminiTop deployment

@@ -2,6 +2,8 @@
 
 This roadmap describes the current engineering direction of the Mercedes-Benz-focused GeminiTop fork.
 
+The W176 + NTG5*1 unit is the initial reference implementation and primary development target. Future Mercedes-Benz targets require separate evidence of hardware and software compatibility.
+
 The project is intentionally evidence-led. Milestones should only move forward when the preceding target assumptions have been established well enough to make the next step safe and useful.
 
 ## Status key
@@ -97,7 +99,7 @@ Completed work includes:
 - initial Stage-1 USB probe;
 - firmware/probe safety documentation;
 - hardened repository ignore rules;
-- Mercedes/W176-focused project documentation.
+- Mercedes-Benz-focused project documentation grounded in the W176 development target.
 
 The Mercedes v2.0.65 firmware remains **REFERENCE ONLY** and does not prove compatibility with the installed v2.0.61 unit.
 
@@ -265,6 +267,8 @@ Do not transmit CAN or send MCU commands merely to discover the protocol.
 Goal:
 
 Separate truly generic Gemini/S7-QA functionality from Mercedes-specific behaviour so the runtime can make target-aware decisions.
+
+The W176 + NTG5*1 unit is the initial reference implementation; this phase does not establish support for other Mercedes-Benz installations.
 
 Expected areas:
 

@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible problem with the Mercedes/RoadTop fork
+about: Report a reproducible problem with the Mercedes-Benz RoadTop fork
 title: "[Bug] "
 labels: bug
 assignees: ""

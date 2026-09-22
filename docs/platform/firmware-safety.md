@@ -20,4 +20,5 @@ It validates ZIP paths/sizes, hashes archive members, discovers structures by
 magic, validates uImage CRC and SquashFS bounds, and derives a partition-layout
 signature. It does not execute or emulate payloads, create an updater, modify an
 image, or produce flashable firmware. The older extract/validate/repack scripts
-remain historical Audi-reference tooling and are not part of the W176 workflow.
+remain historical Audi-reference tooling and are not part of the Mercedes-Benz
+platform workflow.

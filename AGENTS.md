@@ -4,7 +4,7 @@
 
 This repository is a Mercedes-Benz-focused engineering fork of [martexas/GeminiTop](https://github.com/martexas/GeminiTop).
 
-Its current purpose is to reverse-engineer, document, and cautiously extend RoadTop Linux display units used in Mercedes-Benz vehicles, with the primary development target being a RoadTop unit installed in a Mercedes-Benz W176 A45 AMG with factory NTG5*1 infotainment.
+Its current purpose is to reverse-engineer, document, and cautiously extend RoadTop Linux display units used in Mercedes-Benz vehicles. The first reference implementation and primary development target is a RoadTop S7-QA Linux display installed in a Mercedes-Benz W176 A45 AMG with factory NTG5*1 infotainment. Other Mercedes-Benz targets require their own compatibility evidence.
 
 This is currently an **engineering and target-identification project**, not a supported Mercedes launcher distribution.
 
