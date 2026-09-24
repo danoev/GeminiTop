@@ -5,19 +5,12 @@ CDPATH=
 export CDPATH
 IFS=$(printf '\040\011\012x')
 IFS=${IFS%x}
-if [ "${W176_PROBE_TEST_MODE:-0}" = "1" ]; then
-    PATH="${W176_TEST_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
-    PROC_ROOT="${W176_TEST_PROC_ROOT:-/proc}"
-    SYS_ROOT="${W176_TEST_SYS_ROOT:-/sys}"
-    INTERNAL_ROOT="${W176_TEST_INTERNAL_ROOT:-}"
-    COMMAND_TIMEOUT="${W176_TEST_TIMEOUT_SECONDS:-1}"
-else
-    PATH=/usr/sbin:/usr/bin:/sbin:/bin
-    PROC_ROOT=/proc
-    SYS_ROOT=/sys
-    INTERNAL_ROOT=
-    COMMAND_TIMEOUT=5
-fi
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+PROC_ROOT=/proc
+SYS_ROOT=/sys
+INTERNAL_ROOT=
+COMMAND_TIMEOUT=5
+COMMAND_KILL_GRACE=1
 export PATH
 
 SCRIPT_DIR=$(cd -P "$(dirname "$0")" 2>/dev/null && pwd -P) || {
@@ -68,39 +61,101 @@ done
 FAILURES=0
 ERROR_INDEX=0
 OPTIONAL_INDEX=0
+ERROR_WORK="$OUT/.ERRORS.txt.work"
+OPTIONAL_WORK="$OUT/.OPTIONAL.txt.work"
 ERROR_FILE="$OUT/ERRORS.txt"
 OPTIONAL_FILE="$OUT/OPTIONAL.txt"
 STATUS_FILE="$OUT/STATUS.txt"
+STATUS_TEMP="$OUT/.STATUS.txt.tmp"
+ERROR_LOG_FAILED=0
+REQUIRED_WRITE_FAILED=0
+MANIFESTS_FINALIZED=0
 OUTPUT_BLOCK_LIMIT=512
 MAX_INTERNAL_FILE_BYTES=67108864
 MAX_APPINFO_BYTES=1048576
 MAX_HANDLER_CANDIDATES=64
 
-if ! : > "$ERROR_FILE" || ! : > "$OPTIONAL_FILE"; then
+is_regular_nonsymlink() {
+    [ -f "$1" ] && [ ! -L "$1" ]
+}
+
+commit_regular_file() {
+    COMMIT_SOURCE=$1
+    COMMIT_DESTINATION=$2
+    is_regular_nonsymlink "$COMMIT_SOURCE" || return 1
+    mv "$COMMIT_SOURCE" "$COMMIT_DESTINATION" || return 1
+    is_regular_nonsymlink "$COMMIT_DESTINATION"
+}
+
+invalidate_complete() {
+    if [ -e "$OUT/COMPLETE" ] || [ -L "$OUT/COMPLETE" ]; then
+        mv "$OUT/COMPLETE" "$OUT/.COMPLETE.invalid" 2>/dev/null || return 1
+    fi
+    return 0
+}
+
+if ! : > "$ERROR_WORK" || ! : > "$OPTIONAL_WORK" ||
+    ! is_regular_nonsymlink "$ERROR_WORK" || ! is_regular_nonsymlink "$OPTIONAL_WORK"
+then
     printf '%s\n' "w176-probe: cannot initialize status files" >&2
     exit 1
 fi
 
 write_status() {
     STATUS_VALUE=$1
-    {
-        printf '%s\n' "schema=1"
-        printf '%s\n' "status=$STATUS_VALUE"
-        printf '%s\n' "mandatory_failures=$FAILURES"
-        printf '%s\n' "errors=ERRORS.txt"
-        printf '%s\n' "optional=OPTIONAL.txt"
-    } > "$STATUS_FILE"
+    if ! printf '%s\n' \
+        "schema=1" \
+        "status=$STATUS_VALUE" \
+        "mandatory_failures=$FAILURES" \
+        "errors=ERRORS.txt" \
+        "optional=OPTIONAL.txt" > "$STATUS_TEMP"
+    then
+        return 1
+    fi
+    commit_regular_file "$STATUS_TEMP" "$STATUS_FILE"
 }
 
 record_failure() {
     FAILURES=$((FAILURES + 1))
     ERROR_INDEX=$((ERROR_INDEX + 1))
-    printf 'error.%s=%s\n' "$ERROR_INDEX" "$1" >> "$ERROR_FILE" 2>/dev/null || true
+    if [ "$MANIFESTS_FINALIZED" -ne 0 ] ||
+        ! printf 'error.%s=%s\n' "$ERROR_INDEX" "$1" >> "$ERROR_WORK" 2>/dev/null
+    then
+        ERROR_LOG_FAILED=1
+        REQUIRED_WRITE_FAILED=1
+    fi
 }
 
 record_optional() {
     OPTIONAL_INDEX=$((OPTIONAL_INDEX + 1))
-    printf 'optional.%s=%s\n' "$OPTIONAL_INDEX" "$1" >> "$OPTIONAL_FILE" 2>/dev/null || record_failure "cannot_write_optional_manifest"
+    if [ "$MANIFESTS_FINALIZED" -ne 0 ] ||
+        ! printf 'optional.%s=%s\n' "$OPTIONAL_INDEX" "$1" >> "$OPTIONAL_WORK" 2>/dev/null
+    then
+        record_failure "cannot_write_optional_manifest"
+    fi
+}
+
+finalize_manifests() {
+    MANIFEST_RESULT=0
+    if ! commit_regular_file "$OPTIONAL_WORK" "$OPTIONAL_FILE"; then
+        record_failure "optional_manifest:cannot_commit"
+        MANIFEST_RESULT=1
+    fi
+    if ! commit_regular_file "$ERROR_WORK" "$ERROR_FILE"; then
+        record_failure "error_manifest:cannot_commit"
+        MANIFEST_RESULT=1
+    fi
+    MANIFESTS_FINALIZED=1
+    return "$MANIFEST_RESULT"
+}
+
+finish_incomplete() {
+    if [ "$MANIFESTS_FINALIZED" -eq 0 ]; then
+        finalize_manifests >/dev/null 2>&1 || true
+    fi
+    write_status INCOMPLETE >/dev/null 2>&1 || true
+    printf '%s\n' "w176-probe: mandatory collection failed; output incomplete: $OUT" >&2
+    exit 1
 }
 
 if ! write_status INCOMPLETE; then
@@ -117,26 +172,28 @@ for REQUIRED_COMMAND in awk cat cp ls mkdir mv ps uname wc; do
 done
 
 TIMEOUT_MODE=
-if command -v timeout >/dev/null 2>&1; then
+if command -v timeout >/dev/null 2>&1 &&
+    timeout -k 1 1 /bin/sh -c ':' >/dev/null 2>&1
+then
     TIMEOUT_MODE=timeout
-elif command -v busybox >/dev/null 2>&1 && busybox timeout --help >/dev/null 2>&1; then
+elif command -v busybox >/dev/null 2>&1 &&
+    busybox timeout -k 1 1 /bin/sh -c ':' >/dev/null 2>&1
+then
     TIMEOUT_MODE=busybox
 else
-    record_failure "missing_command:timeout"
+    record_failure "missing_hard_timeout:TERM_then_KILL"
     MISSING_COMMAND=1
 fi
 
 if [ "$MISSING_COMMAND" -ne 0 ]; then
-    write_status INCOMPLETE >/dev/null 2>&1 || true
-    printf '%s\n' "w176-probe: mandatory command unavailable; output incomplete: $OUT" >&2
-    exit 1
+    finish_incomplete
 fi
 
 run_bounded() {
     if [ "$TIMEOUT_MODE" = timeout ]; then
-        timeout "$COMMAND_TIMEOUT" "$@"
+        timeout -k "$COMMAND_KILL_GRACE" "$COMMAND_TIMEOUT" "$@"
     else
-        busybox timeout "$COMMAND_TIMEOUT" "$@"
+        busybox timeout -k "$COMMAND_KILL_GRACE" "$COMMAND_TIMEOUT" "$@"
     fi
 }
 
@@ -146,7 +203,7 @@ capture_mandatory() {
     shift 2
     TEMP_FILE="$OUT/.$OUTPUT_FILE.tmp"
     if (ulimit -f "$OUTPUT_BLOCK_LIMIT"; run_bounded "$@") > "$TEMP_FILE" 2>&1; then
-        if ! mv "$TEMP_FILE" "$OUT/$OUTPUT_FILE"; then
+        if ! commit_regular_file "$TEMP_FILE" "$OUT/$OUTPUT_FILE"; then
             record_failure "$LABEL:cannot_commit_output"
         fi
     else
@@ -166,16 +223,23 @@ capture_mandatory applications applications.txt ls -la "$INTERNAL_ROOT/applicati
 capture_mandatory services services.txt ps
 
 FRAMEBUFFER_TEMP="$OUT/.framebuffer.txt.tmp"
-if {
+FRAMEBUFFER_WRITE_OK=1
+if ! : > "$FRAMEBUFFER_TEMP"; then
+    FRAMEBUFFER_WRITE_OK=0
+else
     for ATTRIBUTE in virtual_size bits_per_pixel stride name; do
         VALUE=UNKNOWN
         ATTRIBUTE_PATH="$SYS_ROOT/class/graphics/fb0/$ATTRIBUTE"
         if [ -r "$ATTRIBUTE_PATH" ]; then
             VALUE=$(run_bounded cat "$ATTRIBUTE_PATH" 2>/dev/null) || VALUE=UNKNOWN
         fi
-        printf '%s=%s\n' "$ATTRIBUTE" "$VALUE"
+        if ! printf '%s=%s\n' "$ATTRIBUTE" "$VALUE" >> "$FRAMEBUFFER_TEMP"; then
+            FRAMEBUFFER_WRITE_OK=0
+            break
+        fi
     done
-} > "$FRAMEBUFFER_TEMP"; then
+fi
+if [ "$FRAMEBUFFER_WRITE_OK" -eq 1 ]; then
     if command -v fbset >/dev/null 2>&1; then
         if (ulimit -f "$OUTPUT_BLOCK_LIMIT"; run_bounded fbset) >> "$FRAMEBUFFER_TEMP" 2>&1; then
             record_optional "fbset=OK"
@@ -185,7 +249,7 @@ if {
     else
         record_optional "fbset=SKIPPED:command_unavailable"
     fi
-    mv "$FRAMEBUFFER_TEMP" "$OUT/framebuffer.txt" || record_failure "framebuffer:cannot_commit_output"
+    commit_regular_file "$FRAMEBUFFER_TEMP" "$OUT/framebuffer.txt" || record_failure "framebuffer:cannot_commit_output"
 else
     record_failure "framebuffer:cannot_write_output"
 fi
@@ -202,11 +266,14 @@ do
         record_optional "appinfo:$CANDIDATE=SKIPPED:non_regular_or_symlink"
         continue
     fi
-    APPINFO_SIZE=$(run_bounded wc -c < "$CANDIDATE" 2>/dev/null) || {
+    APPINFO_SIZE_OUTPUT=$(run_bounded wc -c "$CANDIDATE" 2>/dev/null) || {
         record_optional "appinfo:$CANDIDATE=SKIPPED:size_check_failed"
         continue
     }
-    APPINFO_SIZE=$(printf '%s\n' "$APPINFO_SIZE" | awk 'NF == 1 { print $1; exit }')
+    APPINFO_SIZE=$(printf '%s\n' "$APPINFO_SIZE_OUTPUT" | awk '
+        NR == 1 { value = $1; valid = ($1 ~ /^[0-9]+$/) }
+        END { if (NR == 1 && valid) print value }
+    ')
     case "$APPINFO_SIZE" in
         ''|*[!0-9]*) record_optional "appinfo:$CANDIDATE=SKIPPED:invalid_size"; continue ;;
     esac
@@ -214,7 +281,9 @@ do
         record_optional "appinfo:$CANDIDATE=SKIPPED:too_large"
         continue
     fi
-    if run_bounded cp "$CANDIDATE" "$OUT/.appinfo.rc.tmp" 2>/dev/null && mv "$OUT/.appinfo.rc.tmp" "$OUT/appinfo.rc"; then
+    if run_bounded cp "$CANDIDATE" "$OUT/.appinfo.rc.tmp" 2>/dev/null &&
+        commit_regular_file "$OUT/.appinfo.rc.tmp" "$OUT/appinfo.rc"
+    then
         APPINFO_SOURCE=$CANDIDATE
         record_optional "appinfo:$CANDIDATE=OK"
         break
@@ -276,11 +345,14 @@ if [ -n "$HASH_MODE" ]; then
                 record_optional "usb_handler:$CANDIDATE=SKIPPED:non_regular_or_symlink"
                 continue
             fi
-            HANDLER_SIZE=$(run_bounded wc -c < "$CANDIDATE" 2>/dev/null) || {
+            HANDLER_SIZE_OUTPUT=$(run_bounded wc -c "$CANDIDATE" 2>/dev/null) || {
                 record_optional "usb_handler:$CANDIDATE=SKIPPED:size_check_failed"
                 continue
             }
-            HANDLER_SIZE=$(printf '%s\n' "$HANDLER_SIZE" | awk 'NF == 1 { print $1; exit }')
+            HANDLER_SIZE=$(printf '%s\n' "$HANDLER_SIZE_OUTPUT" | awk '
+                NR == 1 { value = $1; valid = ($1 ~ /^[0-9]+$/) }
+                END { if (NR == 1 && valid) print value }
+            ')
             case "$HANDLER_SIZE" in
                 ''|*[!0-9]*) record_optional "usb_handler:$CANDIDATE=SKIPPED:invalid_size"; continue ;;
             esac
@@ -294,7 +366,7 @@ if [ -n "$HASH_MODE" ]; then
                 record_optional "usb_handler:$CANDIDATE=SKIPPED:hash_failed_or_timed_out"
             fi
         done < "$HANDLER_CANDIDATES"
-        if ! mv "$HANDLER_WORK" "$OUT/usb-handlers.sha256"; then
+        if ! commit_regular_file "$HANDLER_WORK" "$OUT/usb-handlers.sha256"; then
             record_failure "usb_handler_hashes:cannot_commit_output"
         fi
     fi
@@ -314,52 +386,128 @@ FB_SIZE=$(awk -F= '$1 == "virtual_size" { print $2; exit }' "$OUT/framebuffer.tx
 FB_BPP=$(awk -F= '$1 == "bits_per_pixel" { print $2; exit }' "$OUT/framebuffer.txt" 2>/dev/null)
 
 SUMMARY_TEMP="$OUT/.stage1-summary.txt.tmp"
-if {
-    printf '%s\n' "# GeminiTop W176 Stage-1 normalized hints"
-    [ -n "$HARDWARE" ] && printf 'identity.hardware=%s\n' "$HARDWARE"
-    [ -n "$KERNEL_RELEASE" ] && printf 'kernel.release=%s\n' "$KERNEL_RELEASE"
-    if [ -n "$NVM_HEX" ]; then
-        case "$NVM_HEX" in
-            *[!0-9a-fA-F]*) ;;
-            *) printf 'mtd.nvm_hex=%s\n' "$NVM_HEX" ;;
-        esac
-    fi
-    [ -n "$FB_SIZE" ] && [ "$FB_SIZE" != UNKNOWN ] && printf 'framebuffer.virtual_size=%s\n' "$FB_SIZE"
-    [ -n "$FB_BPP" ] && [ "$FB_BPP" != UNKNOWN ] && printf 'framebuffer.bits_per_pixel=%s\n' "$FB_BPP"
-    [ -n "$APPINFO_SOURCE" ] && printf 'appinfo.source=%s\n' "$APPINFO_SOURCE"
-    :
-} > "$SUMMARY_TEMP" && mv "$SUMMARY_TEMP" "$OUT/stage1-summary.txt"; then
-    :
-else
+SUMMARY_WRITE_OK=1
+if ! : > "$SUMMARY_TEMP" ||
+    ! printf '%s\n' "# GeminiTop W176 Stage-1 normalized hints" >> "$SUMMARY_TEMP"
+then
+    SUMMARY_WRITE_OK=0
+fi
+if [ "$SUMMARY_WRITE_OK" -eq 1 ] && [ -n "$HARDWARE" ] &&
+    ! printf 'identity.hardware=%s\n' "$HARDWARE" >> "$SUMMARY_TEMP"
+then
+    SUMMARY_WRITE_OK=0
+fi
+if [ "$SUMMARY_WRITE_OK" -eq 1 ] && [ -n "$KERNEL_RELEASE" ] &&
+    ! printf 'kernel.release=%s\n' "$KERNEL_RELEASE" >> "$SUMMARY_TEMP"
+then
+    SUMMARY_WRITE_OK=0
+fi
+if [ "$SUMMARY_WRITE_OK" -eq 1 ] && [ -n "$NVM_HEX" ]; then
+    case "$NVM_HEX" in
+        *[!0-9a-fA-F]*) ;;
+        *) printf 'mtd.nvm_hex=%s\n' "$NVM_HEX" >> "$SUMMARY_TEMP" || SUMMARY_WRITE_OK=0 ;;
+    esac
+fi
+if [ "$SUMMARY_WRITE_OK" -eq 1 ] && [ -n "$FB_SIZE" ] && [ "$FB_SIZE" != UNKNOWN ] &&
+    ! printf 'framebuffer.virtual_size=%s\n' "$FB_SIZE" >> "$SUMMARY_TEMP"
+then
+    SUMMARY_WRITE_OK=0
+fi
+if [ "$SUMMARY_WRITE_OK" -eq 1 ] && [ -n "$FB_BPP" ] && [ "$FB_BPP" != UNKNOWN ] &&
+    ! printf 'framebuffer.bits_per_pixel=%s\n' "$FB_BPP" >> "$SUMMARY_TEMP"
+then
+    SUMMARY_WRITE_OK=0
+fi
+if [ "$SUMMARY_WRITE_OK" -eq 1 ] && [ -n "$APPINFO_SOURCE" ] &&
+    ! printf 'appinfo.source=%s\n' "$APPINFO_SOURCE" >> "$SUMMARY_TEMP"
+then
+    SUMMARY_WRITE_OK=0
+fi
+if [ "$SUMMARY_WRITE_OK" -ne 1 ] ||
+    ! commit_regular_file "$SUMMARY_TEMP" "$OUT/stage1-summary.txt"
+then
     record_failure "summary:cannot_write_output"
 fi
 
 README_TEMP="$OUT/.README.txt.tmp"
-if {
-    printf '%s\n' "Stage-1 probe collection finished."
-    printf '%s\n' "Consult STATUS.txt and require both status=COMPLETE and the COMPLETE marker."
-    printf '%s\n' "Output was written only to: $OUT"
-    printf '%s\n' "No raw CAN, NVM/MTD payload, network, MCU, or Roadtop filesystem write was performed."
-} > "$README_TEMP" && mv "$README_TEMP" "$OUT/README.txt"; then
-    :
-else
+if ! printf '%s\n' \
+    "Stage-1 probe collection finished." \
+    "Consult STATUS.txt and require both status=COMPLETE and a regular non-symlink COMPLETE marker." \
+    "Output was written only to: $OUT" \
+    "No raw CAN, NVM/MTD payload, network, MCU, or Roadtop filesystem write was performed." > "$README_TEMP" ||
+    ! commit_regular_file "$README_TEMP" "$OUT/README.txt"
+then
     record_failure "readme:cannot_write_output"
 fi
 
-if [ "$FAILURES" -ne 0 ]; then
+validate_collection_outputs() {
+    for REQUIRED_OUTPUT in \
+        uname.txt cpuinfo.txt mtd.txt cmdline.txt mounts.txt \
+        input-devices.txt input-nodes.txt applications.txt services.txt \
+        framebuffer.txt stage1-summary.txt README.txt
+    do
+        is_regular_nonsymlink "$OUT/$REQUIRED_OUTPUT" || return 1
+    done
+    if [ -n "$HASH_MODE" ]; then
+        is_regular_nonsymlink "$OUT/usb-handler-candidates.txt" || return 1
+        is_regular_nonsymlink "$OUT/usb-handlers.sha256" || return 1
+    fi
+    return 0
+}
+
+status_is_complete() {
+    is_regular_nonsymlink "$STATUS_FILE" || return 1
+    run_bounded awk -F= '
+        $1 == "status" { status = $2; status_count++ }
+        $1 == "mandatory_failures" { failures = $2; failure_count++ }
+        END {
+            if (status_count != 1 || failure_count != 1 ||
+                status != "COMPLETE" || failures != "0") exit 1
+        }
+    ' "$STATUS_FILE" >/dev/null 2>&1
+}
+
+if ! validate_collection_outputs; then
+    record_failure "required_outputs:missing_non_regular_or_symlink"
+fi
+
+if [ "$FAILURES" -ne 0 ] || [ "$REQUIRED_WRITE_FAILED" -ne 0 ] || [ "$ERROR_LOG_FAILED" -ne 0 ]; then
+    finish_incomplete
+fi
+
+if ! finalize_manifests; then
     write_status INCOMPLETE >/dev/null 2>&1 || true
-    printf '%s\n' "w176-probe: mandatory collection failed; output incomplete: $OUT" >&2
+    printf '%s\n' "w176-probe: cannot finalize manifests; output incomplete: $OUT" >&2
+    exit 1
+fi
+if [ "$FAILURES" -ne 0 ] || [ "$REQUIRED_WRITE_FAILED" -ne 0 ] || [ "$ERROR_LOG_FAILED" -ne 0 ] ||
+    ! is_regular_nonsymlink "$ERROR_FILE" || ! is_regular_nonsymlink "$OPTIONAL_FILE"
+then
+    invalidate_complete >/dev/null 2>&1 || true
+    write_status INCOMPLETE >/dev/null 2>&1 || true
+    printf '%s\n' "w176-probe: manifest validation failed; output incomplete: $OUT" >&2
     exit 1
 fi
 
-if ! write_status COMPLETE; then
-    record_failure "status:cannot_write_complete_manifest"
+if ! write_status COMPLETE || ! status_is_complete; then
     write_status INCOMPLETE >/dev/null 2>&1 || true
+    printf '%s\n' "w176-probe: cannot commit complete status; output incomplete: $OUT" >&2
     exit 1
 fi
-if ! : > "$OUT/.COMPLETE.tmp" || ! mv "$OUT/.COMPLETE.tmp" "$OUT/COMPLETE"; then
-    record_failure "complete_marker:cannot_create"
+
+COMPLETE_TEMP="$OUT/.COMPLETE.tmp"
+COMPLETE_FILE="$OUT/COMPLETE"
+if [ -e "$COMPLETE_FILE" ] || [ -L "$COMPLETE_FILE" ] ||
+    ! validate_collection_outputs ||
+    ! is_regular_nonsymlink "$ERROR_FILE" ||
+    ! is_regular_nonsymlink "$OPTIONAL_FILE" ||
+    ! status_is_complete ||
+    ! printf '%s\n' "complete=1" > "$COMPLETE_TEMP" ||
+    ! commit_regular_file "$COMPLETE_TEMP" "$COMPLETE_FILE"
+then
+    invalidate_complete >/dev/null 2>&1 || true
     write_status INCOMPLETE >/dev/null 2>&1 || true
+    printf '%s\n' "w176-probe: cannot create validated completion marker; output incomplete: $OUT" >&2
     exit 1
 fi
 

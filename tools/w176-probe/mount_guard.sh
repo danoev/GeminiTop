@@ -5,20 +5,11 @@ CDPATH=
 export CDPATH
 IFS=$(printf '\040\011\012x')
 IFS=${IFS%x}
-
-if [ "${W176_PROBE_TEST_MODE:-0}" = "1" ]; then
-    PATH="${W176_TEST_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
-    MOUNTS_FILE="${W176_TEST_MOUNTS_FILE:-/proc/mounts}"
-    SYS_BLOCK_ROOT="${W176_TEST_SYS_BLOCK_ROOT:-/sys/block}"
-    DEV_ROOT="${W176_TEST_DEV_ROOT:-/dev}"
-    DEVICE_TEST="-e"
-else
-    PATH=/usr/sbin:/usr/bin:/sbin:/bin
-    MOUNTS_FILE=/proc/mounts
-    SYS_BLOCK_ROOT=/sys/block
-    DEV_ROOT=/dev
-    DEVICE_TEST="-b"
-fi
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+MOUNTS_FILE=/proc/mounts
+SYS_BLOCK_ROOT=/sys/block
+DEV_ROOT=/dev
+DEVICE_TEST=-b
 export PATH
 
 fail() {

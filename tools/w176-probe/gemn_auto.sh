@@ -6,11 +6,7 @@ CDPATH=
 export CDPATH
 IFS=$(printf '\040\011\012x')
 IFS=${IFS%x}
-if [ "${W176_PROBE_TEST_MODE:-0}" = "1" ]; then
-    PATH="${W176_TEST_PATH:-/usr/bin:/bin:/usr/sbin:/sbin}"
-else
-    PATH=/usr/sbin:/usr/bin:/sbin:/bin
-fi
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
 
 SCRIPT_DIR=$(cd -P "$(dirname "$0")" 2>/dev/null && pwd -P) || {

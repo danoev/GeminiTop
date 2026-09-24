@@ -19,6 +19,9 @@ Reviewed scope:
 - uses a fixed command path, bounded collection and USB-handler discovery,
   bounded output sizes, and a maximum of 100 pre-existing output directory
   names;
+- requires a runtime `timeout` implementation whose `-k` option is proven by a
+  capability check, so bounded commands receive `TERM` and then `KILL`; the
+  probe fails closed when that hard bound is unavailable;
 - copies or hashes an internal file only when it is a regular non-symlink file;
 - does not read raw CAN streams;
 - does not read NVM/MTD payload data or write NVM/MTD;
@@ -28,8 +31,14 @@ Reviewed scope:
 Every created output directory starts as `INCOMPLETE`. `STATUS.txt` records the
 state and mandatory failure count, `ERRORS.txt` records mandatory failures, and
 `OPTIONAL.txt` records optional skips. Treat a run as successful only when
-`STATUS.txt` says `status=COMPLETE` and a regular `COMPLETE` marker exists. The
-probe never creates that marker after a mandatory failure.
+`STATUS.txt` says `status=COMPLETE` and a regular non-symlink `COMPLETE` marker
+exists. Required outputs and manifests are validated and finalised before that
+marker is atomically renamed into place. The probe never creates it after a
+mandatory or required-write failure.
+
+The deployable scripts contain only the fixed production paths above. Host tests
+instrument temporary copies with fixture paths; there is no environment-enabled
+test mode or path substitution branch in the USB payload.
 
 The output may contain device identifiers or configuration. Review it before
 sharing. Keep raw probe and user-data captures outside Git; `.gitignore` blocks
