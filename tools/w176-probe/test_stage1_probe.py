@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -186,6 +187,21 @@ class Stage1ProbeTests(unittest.TestCase):
         self.assertIn("not approved", result.stderr)
         self.assert_no_complete()
 
+    def test_non_removable_device_is_rejected(self):
+        self.fixture.set_mounts(("sda1", self.fixture.usb, "vfat"))
+        (self.fixture.sys / "block/sda/removable").write_text("0\n")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("found 0", result.stderr)
+        self.assert_no_complete()
+
+    def test_malformed_mount_table_is_rejected(self):
+        (self.fixture.proc / "mounts").write_text("not a valid mount record\n")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("found 0", result.stderr)
+        self.assert_no_complete()
+
     def test_arbitrary_internal_output_path_is_rejected(self):
         result = self.fixture.run_stage(self.fixture.internal)
         self.assertNotEqual(result.returncode, 0)
@@ -259,6 +275,20 @@ class Stage1ProbeTests(unittest.TestCase):
         self.assertIn("non_regular_or_symlink", (output / "OPTIONAL.txt").read_text())
         self.assertTrue((output / "COMPLETE").exists())
 
+    def test_regular_appinfo_and_handler_are_collected(self):
+        appinfo_dir = self.fixture.internal / "application/etc"
+        appinfo_dir.mkdir(parents=True)
+        (appinfo_dir / "appinfo.rc").write_text("GEMINI\n")
+        handler = self.fixture.internal / "application/bin/usb-handler"
+        handler.write_text("handler\n")
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((output / "appinfo.rc").read_text(), "GEMINI\n")
+        self.assertIn(str(handler), (output / "usb-handler-candidates.txt").read_text())
+        self.assertIn(str(handler), (output / "usb-handlers.sha256").read_text())
+        self.assertTrue((output / "COMPLETE").exists())
+
     def test_hanging_optional_operation_times_out(self):
         self.fixture.write_command("fbset", "#!/bin/sh\n/bin/sleep 30\n")
         started = time.monotonic()
@@ -269,6 +299,98 @@ class Stage1ProbeTests(unittest.TestCase):
         self.assertLess(elapsed, 6)
         self.assertIn("fbset=SKIPPED:failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
         self.assertTrue((output / "COMPLETE").exists())
+
+    def test_hanging_handler_enumeration_times_out(self):
+        real_ls = shutil.which("ls")
+        assert real_ls is not None
+        hanging_directory = self.fixture.internal / "usr/local/bin"
+        self.fixture.write_command(
+            "ls",
+            "#!/bin/sh\n"
+            f"if [ \"$#\" -eq 2 ] && [ \"$1\" = -1 ] && [ \"$2\" = {shlex.quote(str(hanging_directory))} ]; then\n"
+            "    /bin/sleep 30\n"
+            "    exit 1\n"
+            "fi\n"
+            f"exec {shlex.quote(real_ls)} \"$@\"\n",
+        )
+        started = time.monotonic()
+        result = self.fixture.run_entry(timeout=8)
+        elapsed = time.monotonic() - started
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(elapsed, 6)
+        self.assertIn(
+            f"usb_handlers:{hanging_directory}=SKIPPED:enumeration_failed_or_timed_out",
+            (output / "OPTIONAL.txt").read_text(),
+        )
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_hanging_handler_hash_times_out(self):
+        (self.fixture.internal / "application/bin/usb-handler").write_text("handler\n")
+        self.fixture.write_command("sha256sum", "#!/bin/sh\n/bin/sleep 30\n")
+        started = time.monotonic()
+        result = self.fixture.run_entry(timeout=8)
+        elapsed = time.monotonic() - started
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(elapsed, 6)
+        self.assertIn("hash_failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        self.assertEqual((output / "usb-handlers.sha256").read_text(), "")
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_hanging_appinfo_copy_times_out(self):
+        appinfo_dir = self.fixture.internal / "application/etc"
+        appinfo_dir.mkdir(parents=True)
+        (appinfo_dir / "appinfo.rc").write_text("GEMINI\n")
+        self.fixture.write_command("cp", "#!/bin/sh\nexec /bin/sleep 30\n")
+        started = time.monotonic()
+        result = self.fixture.run_entry(timeout=8)
+        elapsed = time.monotonic() - started
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(elapsed, 6)
+        self.assertIn("copy_failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        self.assertFalse((output / "appinfo.rc").exists())
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_hanging_mandatory_collection_is_incomplete(self):
+        real_cat = shutil.which("cat")
+        assert real_cat is not None
+        hanging_file = self.fixture.proc / "mtd"
+        self.fixture.write_command(
+            "cat",
+            "#!/bin/sh\n"
+            f"if [ \"$#\" -eq 1 ] && [ \"$1\" = {shlex.quote(str(hanging_file))} ]; then\n"
+            "    /bin/sleep 30\n"
+            "    exit 1\n"
+            "fi\n"
+            f"exec {shlex.quote(real_cat)} \"$@\"\n",
+        )
+        started = time.monotonic()
+        result = self.fixture.run_entry(timeout=8)
+        elapsed = time.monotonic() - started
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(elapsed, 6)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertIn("mtd:collection_failed_or_timed_out", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_optional_manifest_write_failure_is_incomplete(self):
+        optional_file = self.fixture.usb / "stage1-probe/OPTIONAL.txt"
+        self.fixture.write_command(
+            "ps",
+            "#!/bin/sh\n"
+            f"/bin/chmod 0444 {shlex.quote(str(optional_file))}\n"
+            "printf '%s\\n' 'PID COMMAND' '1 init'\n",
+        )
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        optional_file.chmod(0o644)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertIn("cannot_write_optional_manifest", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
 
     def test_mandatory_failure_never_creates_complete_marker(self):
         (self.fixture.proc / "mtd").unlink()

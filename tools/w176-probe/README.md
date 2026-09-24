@@ -16,8 +16,9 @@ Reviewed scope:
 - reads system identity, kernel, `/proc/mtd` metadata, framebuffer attributes,
   input identity, `appinfo.rc`, USB-handler hashes, and application/service names;
 - writes its results only beneath `stage1-probe[-N]/` on the same USB device;
-- uses a fixed command path, bounded collection commands, bounded output sizes,
-  and a maximum of 100 pre-existing output directory names;
+- uses a fixed command path, bounded collection and USB-handler discovery,
+  bounded output sizes, and a maximum of 100 pre-existing output directory
+  names;
 - copies or hashes an internal file only when it is a regular non-symlink file;
 - does not read raw CAN streams;
 - does not read NVM/MTD payload data or write NVM/MTD;

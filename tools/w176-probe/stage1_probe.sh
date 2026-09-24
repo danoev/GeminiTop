@@ -206,6 +206,7 @@ do
         record_optional "appinfo:$CANDIDATE=SKIPPED:size_check_failed"
         continue
     }
+    APPINFO_SIZE=$(printf '%s\n' "$APPINFO_SIZE" | awk 'NF == 1 { print $1; exit }')
     case "$APPINFO_SIZE" in
         ''|*[!0-9]*) record_optional "appinfo:$CANDIDATE=SKIPPED:invalid_size"; continue ;;
     esac
@@ -238,16 +239,33 @@ hash_file_bounded() {
 }
 
 if [ -n "$HASH_MODE" ]; then
-    if ! : > "$OUT/usb-handlers.sha256"; then
-        record_failure "usb_handler_hashes:cannot_create_output"
+    HANDLER_CANDIDATES="$OUT/usb-handler-candidates.txt"
+    HANDLER_WORK="$OUT/.usb-handler-work.tmp"
+    if ! : > "$HANDLER_CANDIDATES" || ! : > "$HANDLER_WORK"; then
+        record_failure "usb_handler_hashes:cannot_initialize_output"
     else
-        HANDLER_COUNT=0
-        for CANDIDATE in \
-            "$INTERNAL_ROOT"/usr/local/bin/*usb* \
-            "$INTERNAL_ROOT"/usr/local/bin/*Usb* \
-            "$INTERNAL_ROOT"/application/bin/*usb* \
-            "$INTERNAL_ROOT"/application/bin/*Usb*
+        for HANDLER_DIRECTORY in \
+            "$INTERNAL_ROOT/usr/local/bin" \
+            "$INTERNAL_ROOT/application/bin"
         do
+            [ -d "$HANDLER_DIRECTORY" ] || continue
+            if (ulimit -f "$OUTPUT_BLOCK_LIMIT"; run_bounded ls -1 "$HANDLER_DIRECTORY") > "$HANDLER_WORK" 2>/dev/null; then
+                if ! awk -v prefix="$HANDLER_DIRECTORY/" \
+                    'index($0, "usb") || index($0, "Usb") { print prefix $0 }' \
+                    "$HANDLER_WORK" >> "$HANDLER_CANDIDATES"
+                then
+                    record_failure "usb_handlers:cannot_write_candidate_list"
+                fi
+            else
+                record_optional "usb_handlers:$HANDLER_DIRECTORY=SKIPPED:enumeration_failed_or_timed_out"
+            fi
+        done
+
+        if ! : > "$HANDLER_WORK"; then
+            record_failure "usb_handler_hashes:cannot_initialize_hash_output"
+        fi
+        HANDLER_COUNT=0
+        while IFS= read -r CANDIDATE || [ -n "$CANDIDATE" ]; do
             [ -e "$CANDIDATE" ] || [ -L "$CANDIDATE" ] || continue
             HANDLER_COUNT=$((HANDLER_COUNT + 1))
             if [ "$HANDLER_COUNT" -gt "$MAX_HANDLER_CANDIDATES" ]; then
@@ -262,6 +280,7 @@ if [ -n "$HASH_MODE" ]; then
                 record_optional "usb_handler:$CANDIDATE=SKIPPED:size_check_failed"
                 continue
             }
+            HANDLER_SIZE=$(printf '%s\n' "$HANDLER_SIZE" | awk 'NF == 1 { print $1; exit }')
             case "$HANDLER_SIZE" in
                 ''|*[!0-9]*) record_optional "usb_handler:$CANDIDATE=SKIPPED:invalid_size"; continue ;;
             esac
@@ -269,12 +288,15 @@ if [ -n "$HASH_MODE" ]; then
                 record_optional "usb_handler:$CANDIDATE=SKIPPED:too_large"
                 continue
             fi
-            if hash_file_bounded "$CANDIDATE" >> "$OUT/usb-handlers.sha256" 2>/dev/null; then
+            if hash_file_bounded "$CANDIDATE" >> "$HANDLER_WORK" 2>/dev/null; then
                 record_optional "usb_handler:$CANDIDATE=OK"
             else
                 record_optional "usb_handler:$CANDIDATE=SKIPPED:hash_failed_or_timed_out"
             fi
-        done
+        done < "$HANDLER_CANDIDATES"
+        if ! mv "$HANDLER_WORK" "$OUT/usb-handlers.sha256"; then
+            record_failure "usb_handler_hashes:cannot_commit_output"
+        fi
     fi
     if [ -f "$OUT/appinfo.rc" ] && [ ! -L "$OUT/appinfo.rc" ]; then
         if ! hash_file_bounded "$OUT/appinfo.rc" > "$OUT/appinfo.sha256" 2>/dev/null; then
