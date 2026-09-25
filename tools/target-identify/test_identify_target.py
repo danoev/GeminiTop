@@ -58,6 +58,43 @@ class TargetIdentificationTests(unittest.TestCase):
         report = IDENTIFY.identify({}, [PROFILE])
         self.assertNotIn("QD507 confirmed", json.dumps(report))
 
+    def test_physical_target_match_has_physical_fingerprint_caution(self):
+        profile = {**PROFILE, "profile_kind": "physical-target"}
+        comparison = IDENTIFY.compare_profile(profile, {
+            "identity.hardware": "GEMINI",
+            "mtd.nvm_bytes": 8388608,
+            "touch.name": "fts_ts",
+            "touch.event": "event3",
+        })
+        self.assertEqual(comparison["result"], "MATCH")
+        self.assertIn("installed-target fingerprint", comparison["caution"])
+        self.assertIn("does not confirm", comparison["caution"])
+
+    def test_directory_load_requires_transactional_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "STATUS.txt").write_text(
+                "schema=1\nstatus=COMPLETE\nmandatory_failures=0\n"
+            )
+            (root / "COMPLETE").write_text("complete=1\n")
+            (root / "ERRORS.txt").write_text("")
+            self.assertEqual(IDENTIFY.load_probe(root), {})
+            (root / "ERRORS.txt").write_text("error.1=bad\n")
+            with self.assertRaises(IDENTIFY.IdentificationError):
+                IDENTIFY.load_probe(root)
+
+    def test_directory_load_rejects_symlink_complete(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "STATUS.txt").write_text(
+                "schema=1\nstatus=COMPLETE\nmandatory_failures=0\n"
+            )
+            (root / "marker").write_text("complete=1\n")
+            (root / "COMPLETE").symlink_to("marker")
+            (root / "ERRORS.txt").write_text("")
+            with self.assertRaises(IDENTIFY.IdentificationError):
+                IDENTIFY.load_probe(root)
+
     def test_probe_directory_parses_runtime_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

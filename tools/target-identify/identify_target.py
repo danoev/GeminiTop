@@ -153,8 +153,34 @@ def parse_probe_directory(path: Path) -> Dict[str, Any]:
     return evidence
 
 
+def validate_complete_probe_directory(path: Path) -> None:
+    """Require the transactional Stage-1 success contract before identification."""
+    status_path = path / "STATUS.txt"
+    complete_path = path / "COMPLETE"
+    errors_path = path / "ERRORS.txt"
+    if not status_path.is_file() or status_path.is_symlink():
+        raise IdentificationError("probe STATUS.txt is missing, non-regular, or a symlink")
+    if not complete_path.is_file() or complete_path.is_symlink():
+        raise IdentificationError("probe COMPLETE marker is missing, non-regular, or a symlink")
+    values: Dict[str, List[str]] = {}
+    for raw_line in _read(status_path).splitlines():
+        if "=" not in raw_line:
+            continue
+        key, value = raw_line.split("=", 1)
+        values.setdefault(key, []).append(value)
+    required = {"schema": "1", "status": "COMPLETE", "mandatory_failures": "0"}
+    for key, expected in required.items():
+        if values.get(key) != [expected]:
+            raise IdentificationError(f"probe STATUS.txt does not have exactly {key}={expected}")
+    if _read(complete_path).strip() != "complete=1":
+        raise IdentificationError("probe COMPLETE marker has unexpected content")
+    if not errors_path.is_file() or errors_path.is_symlink() or errors_path.stat().st_size != 0:
+        raise IdentificationError("probe ERRORS.txt is missing, non-regular, a symlink, or non-empty")
+
+
 def load_probe(path: Path) -> Dict[str, Any]:
     if path.is_dir():
+        validate_complete_probe_directory(path)
         return parse_probe_directory(path)
     try:
         data = json.loads(_read(path))
@@ -195,12 +221,20 @@ def compare_profile(profile: Mapping[str, Any], observed: Mapping[str, Any]) -> 
     else:
         overall = "UNKNOWN"
     assert overall in VALID_RESULTS
+    profile_kind = profile.get("profile_kind")
+    if profile_kind == "physical-target":
+        caution = (
+            "A MATCH identifies the recorded installed-target fingerprint only; "
+            "it does not confirm a marketing board identifier or firmware compatibility."
+        )
+    else:
+        caution = "A reference MATCH indicates similarity only; it does not confirm a board identifier."
     return {
         "profile_id": profile.get("id"),
-        "profile_kind": profile.get("profile_kind"),
+        "profile_kind": profile_kind,
         "result": overall,
         "fields": fields,
-        "caution": "A reference MATCH indicates similarity only; it does not confirm a board identifier.",
+        "caution": caution,
     }
 
 

@@ -12,16 +12,21 @@ targets/
 ```
 
 The Audi and Mercedes directories are reference profiles. The W176 profile is a
-physical target profile and starts with UNKNOWN hardware facts. The two version
-strings read from the installed UI are CONFIRMED owner observations; they do not
-establish board family, partitioning, ABI, display, input, audio, or vehicle-bus
-compatibility.
+physical installed-target fingerprint. It now contains sanitised facts from the
+successful Stage-1 capture as well as the two owner-observed version strings.
+Those facts establish the fields explicitly recorded in the profile, but do not
+establish a commercial board family, firmware compatibility, exact userspace
+ABI, audio routing, or vehicle-bus semantics.
 
 Profiles are not loaded by the launcher or orchestrator. This prevents a
 reference value from silently becoming a runtime W176 default. Future runtime
 wiring must require a reviewed, authoritative W176 profile and explicit safety
 approval.
 
-The host-side comparator treats every field independently and returns only
+The host-side comparator first requires the Stage-1 transactional success
+contract when reading a capture directory: a complete status with zero
+mandatory failures, a regular non-symlink `COMPLETE` marker, and an empty
+regular `ERRORS.txt`. It then treats every field independently and returns only
 `MATCH`, `DIFFERENT`, or `UNKNOWN`. A reference `MATCH` means the observed fields
-look the same; it is not a board-ID assertion.
+look the same; a physical-profile `MATCH` means the capture matches the recorded
+installed fingerprint. Neither is a board-ID or firmware-compatibility claim.

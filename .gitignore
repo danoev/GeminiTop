@@ -51,6 +51,9 @@ firmware_tools/REPACKED/
 **/extracted_*/
 stage1-probe/
 stage1-probe-*/
+stage2-platform/
+stage2-platform-*/
+ARM_STAGE2_PLATFORM_CAPTURE
 probe-results/
 recon.txt
 nvm-capture*/

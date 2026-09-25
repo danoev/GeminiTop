@@ -4,16 +4,32 @@ Every item uses one of: CONFIRMED, REFERENCE ONLY, INFERENCE, or UNKNOWN.
 
 ## A. Common Roadtop platform
 
+The end goal is a defensible, recoverable mechanism for deploying our own fixes
+and features. Characterisation and reference comparison are gates toward that
+patchability decision, not ends in themselves. The current route assessment is
+maintained in `docs/platform/w176-patchability.md`.
+
 - CONFIRMED: the installed UI reports system `2025.09.11-S7-qa-v2.0.61` and MCU
   `Z-2.01-250521`.
+- CONFIRMED: Stage-1 attempt 2, using immutable payload commit
+  `5f85cafd0416b0511cc4570b6e280613112d6243`, completed with
+  `status=COMPLETE`, zero mandatory failures, an empty `ERRORS.txt`, and a
+  regular completion marker. Its sanitised fingerprint is recorded in
+  `targets/w176-ntg5/profile.json` and `docs/platform/w176-stage1-evidence.md`.
+- CONFIRMED: the installed runtime is ARMv7/GEMINI with Linux 4.9.217, the
+  recorded 28-entry MTD metadata map, read-only SquashFS platform/application
+  roots, 8 MiB NVM, a 1920x720/32-bpp framebuffer, and `fts_ts` on `event3`.
 - REFERENCE ONLY: the Benz v2.0.65 archive contains a Gemini container, a
   validated Linux 4.9.217 uImage, and SquashFS images. Separately, the original
   Audi reconnaissance capture showed a Gemini/ARMv7 runtime and stock
   `Launcher`; the raw capture has been removed from Git.
-- INFERENCE: validated image-format and host-analysis code can be shared across
-  S7-QA variants.
-- UNKNOWN: installed board identity, partition map, ABI, framebuffer, touch,
-  paths, service set, USB handler, and compatibility with reference firmware.
+- INFERENCE: the installed v2.0.61 and reference v2.0.65 share a substantial
+  S7-QA/Gemini platform topology. Matching names, sizes, and kernel release do
+  not establish byte identity or update compatibility.
+- UNKNOWN: commercial board identity, exact userspace/library ABI relationship,
+  exact installed-vs-reference binary relationship, update compatibility,
+  framebuffer pixel semantics beyond the captured channel metadata, and
+  unobserved feature flags.
 
 ## B. Audio / MOST
 
@@ -40,14 +56,17 @@ No audio-routing patch or MCU command belongs in the common-platform phase.
 No CAN transmission, MCU command, illumination patch, or forced day/night value
 is authorized in this phase.
 
-## Blocked until the real Stage-1 probe
+## Still blocked after Stage-1
 
-- promoting any Mercedes reference fact into the W176 profile;
-- selecting a runtime toolchain/ABI for W176;
-- approving framebuffer or touch support;
-- using a partition size, firmware offset, filesystem path, or USB mount rule;
+- selecting a runtime toolchain/ABI solely from architecture and kernel data;
+- approving rendering solely from dimensions and 32-bpp metadata;
+- treating a matching partition name/size as firmware byte compatibility;
 - identifying the unit as QD507 (or any other marketing board identifier);
 - staging or enabling the Gemini launcher/orchestrator on the W176 unit;
 - enabling SSH/network services;
 - beginning audio, MOST, illumination, CAN, or MCU changes that depend on target
   identity.
+
+Stage-2 is a separately armed, selective, read-only platform/ABI capture. It is not
+approved for physical use by this document; independent review must return an
+explicit physical GO before the arming marker is created.

@@ -34,3 +34,20 @@ the inspector for ELF-magic detection and hashing. No filesystem tree was
 retained and no ARM binary was executed or emulated. These inventories remain
 REFERENCE ONLY and do not establish the installed W176 unit's filesystem,
 binary set, ABI, or hardware identity.
+
+The successful installed-target Stage-1 capture now confirms several matching
+topology characteristics, documented in `w176-stage1-evidence.md`. They do not
+promote this image to a compatible update. In particular, the installed
+Launcher is 92,416 bytes while this reference Launcher is 92,544 bytes, proving
+that those two files differ. The separately reviewed Stage-2 design captures
+only the installed Launcher and small startup/config files, and hashes selected
+larger platform binaries, to resolve the remaining static-comparison questions.
+
+For patchability planning, direct static inspection of the extracted reference
+update-script bodies found uImage CRC plus component/chunk MD5 integrity logic.
+The main script contains 205 `md5sum` references and each full NAND/eMMC ISP
+script contains 306. No `rsa`, `signature`, `signed`, `sha1`, `sha256`, or
+`public key` token was found in those three script bodies. This is not proof
+that modified images are accepted: authentication may occur in a bootloader or
+pre-script loader. Installed v2.0.61 update acceptance remains UNKNOWN, and no
+modified image is authorised.
