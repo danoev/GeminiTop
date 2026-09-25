@@ -19,13 +19,20 @@ Reviewed scope:
 - uses a fixed command path, bounded collection and USB-handler discovery,
   bounded output sizes, and a maximum of 100 pre-existing output directory
   names;
-- uses a `/bin/sh` watchdog built from background jobs, `sleep`, `kill`, and
-  `wait`; bounded commands receive `TERM`, a short grace interval, and then
-  `KILL`, without requiring the external `timeout` command;
+- uses one parent-controlled `/bin/sh` state machine which polls the direct
+  child's `/proc/PID/stat` identity and state without reaping it; bounded
+  commands receive `TERM`, a short grace interval, and then `KILL`, with all
+  signal paths ending before the single `wait`/reap and without requiring the
+  external `timeout` command;
+- rejects a changed `/proc/PID/stat` parent-PID/start-time identity before any
+  signal, rather than treating a reused numeric PID as the owned child;
 - runs a harmless finite TERM-ignoring self-test before substantive collection
-  and fails closed unless the watchdog kills and reaps it and cleans up itself;
+  and fails closed unless the runner records that the owned child was live at
+  the KILL decision, KILL succeeded, the child ceased being live, and the child
+  was reaped with a signal-derived status;
 - records bounded, read-only shell/`timeout`/BusyBox capability diagnostics in
-  the required `CAPABILITIES.txt` output;
+  the required `CAPABILITIES.txt` output, and never starts a diagnostic or
+  collector when its file-size limit cannot first be established;
 - copies or hashes an internal file only when it is a regular non-symlink file;
 - does not read raw CAN streams;
 - does not read NVM/MTD payload data or write NVM/MTD;
@@ -43,6 +50,10 @@ mandatory or required-write failure.
 The deployable scripts contain only the fixed production paths above. Host tests
 instrument temporary copies with fixture paths; there is no environment-enabled
 test mode or path substitution branch in the USB payload.
+
+The bounded runner owns only the one direct process it launches. The Stage-1
+commands are simple utilities, but the runner cannot guarantee control of
+arbitrary unexpected descendants created by a target utility.
 
 ## Installed-target evidence from physical attempt 1
 

@@ -7,15 +7,18 @@ IFS=$(printf '\040\011\012x')
 IFS=${IFS%x}
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 PROC_ROOT=/proc
+PROCESS_ROOT=/proc
 SYS_ROOT=/sys
 INTERNAL_ROOT=
-COMMAND_TIMEOUT=5
-COMMAND_KILL_GRACE=1
-COMMAND_KILL_VERIFY=1
-SELFTEST_TIMEOUT=1
-SELFTEST_KILL_GRACE=1
-SELFTEST_KILL_VERIFY=1
-SELFTEST_NATURAL_DELAY=4
+COMMAND_POLL_INTERVAL=1
+COMMAND_RUN_POLLS=5
+COMMAND_TERM_POLLS=1
+COMMAND_KILL_POLLS=1
+SELFTEST_POLL_INTERVAL=1
+SELFTEST_RUN_POLLS=1
+SELFTEST_TERM_POLLS=1
+SELFTEST_KILL_POLLS=1
+SELFTEST_NATURAL_DELAY=10
 export PATH
 
 SCRIPT_DIR=$(cd -P "$(dirname "$0")" 2>/dev/null && pwd -P) || {
@@ -190,114 +193,213 @@ if [ "$MISSING_COMMAND" -ne 0 ]; then
     finish_incomplete
 fi
 
-watchdog_delay() {
-    # A cancelled watchdog must also terminate and reap its active sleep child.
-    WATCHDOG_SLEEP_PID=
-    watchdog_cancel() {
-        if [ -n "$WATCHDOG_SLEEP_PID" ]; then
-            kill -TERM "$WATCHDOG_SLEEP_PID" 2>/dev/null || true
-            wait "$WATCHDOG_SLEEP_PID" 2>/dev/null || true
+read_current_process_id() {
+    CURRENT_PROCESS_STAT=
+    IFS= read -r CURRENT_PROCESS_STAT < "$PROCESS_ROOT/self/stat" 2>/dev/null || return 1
+    CURRENT_PROCESS_PID=${CURRENT_PROCESS_STAT%% *}
+    case "$CURRENT_PROCESS_PID" in
+        ''|*[!0-9]*) return 1 ;;
+    esac
+    return 0
+}
+
+observe_owned_child() {
+    OBSERVED_PID=$1
+    OBSERVED_STAT_FILE="$PROCESS_ROOT/$OBSERVED_PID/stat"
+    OBSERVED_STAT_LINE=
+    if ! IFS= read -r OBSERVED_STAT_LINE < "$OBSERVED_STAT_FILE" 2>/dev/null; then
+        if [ ! -e "$OBSERVED_STAT_FILE" ]; then
+            OWNED_CHILD_STATE=ABSENT
+            return 0
         fi
-        exit 0
+        OWNED_CHILD_STATE=UNKNOWN
+        return 1
+    fi
+
+    # The comm field is parenthesised and may itself contain spaces or closing
+    # parentheses. Remove through the final ") " before splitting the numeric
+    # tail. Its first, second, and twentieth fields are state, parent PID, and
+    # start time respectively.
+    case "$OBSERVED_STAT_LINE" in
+        *') '*) OBSERVED_STAT_TAIL=${OBSERVED_STAT_LINE##*) } ;;
+        *) OWNED_CHILD_STATE=UNKNOWN; return 1 ;;
+    esac
+    set -- $OBSERVED_STAT_TAIL
+    [ "$#" -ge 20 ] || {
+        OWNED_CHILD_STATE=UNKNOWN
+        return 1
     }
-    trap 'watchdog_cancel' HUP INT TERM
-    sleep "$1" &
-    WATCHDOG_SLEEP_PID=$!
-    wait "$WATCHDOG_SLEEP_PID"
-    WATCHDOG_DELAY_STATUS=$?
-    WATCHDOG_SLEEP_PID=
-    trap - HUP INT TERM
-    return "$WATCHDOG_DELAY_STATUS"
+    OWNED_CHILD_CODE=$1
+    OBSERVED_PARENT_PID=$2
+    shift 19
+    OBSERVED_START_TIME=$1
+    case "$OBSERVED_PARENT_PID" in
+        ''|*[!0-9]*) OWNED_CHILD_STATE=UNKNOWN; return 1 ;;
+    esac
+    case "$OBSERVED_START_TIME" in
+        ''|*[!0-9]*) OWNED_CHILD_STATE=UNKNOWN; return 1 ;;
+    esac
+
+    if [ -z "$OWNED_CHILD_PARENT_PID" ] &&
+        [ "$OBSERVED_PARENT_PID" != "$OWNED_CHILD_EXPECTED_PARENT_PID" ]
+    then
+        OWNED_CHILD_STATE=REPLACED
+        return 0
+    elif [ -z "$OWNED_CHILD_PARENT_PID" ]; then
+        OWNED_CHILD_PARENT_PID=$OBSERVED_PARENT_PID
+        OWNED_CHILD_START_TIME=$OBSERVED_START_TIME
+    elif [ "$OBSERVED_PARENT_PID" != "$OWNED_CHILD_PARENT_PID" ] ||
+        [ "$OBSERVED_START_TIME" != "$OWNED_CHILD_START_TIME" ]
+    then
+        OWNED_CHILD_STATE=REPLACED
+        return 0
+    fi
+    case "$OWNED_CHILD_CODE" in
+        Z|X|x) OWNED_CHILD_STATE=EXITED ;;
+        R|S|D|T|t|I|W|P) OWNED_CHILD_STATE=LIVE ;;
+        *) OWNED_CHILD_STATE=UNKNOWN; return 1 ;;
+    esac
+    return 0
+}
+
+poll_owned_child() {
+    POLL_LIMIT=$1
+    POLL_COUNT=0
+    while [ "$POLL_COUNT" -lt "$POLL_LIMIT" ]; do
+        sleep "$ACTIVE_POLL_INTERVAL" || return 2
+        observe_owned_child "$BOUNDED_CHILD_PID" || return 2
+        [ "$OWNED_CHILD_STATE" = LIVE ] || return 0
+        POLL_COUNT=$((POLL_COUNT + 1))
+    done
+    return 1
+}
+
+force_owned_child_stop() {
+    # This recovery path is entered before the sole wait/reap. Every signal is
+    # therefore confined to the still-owned numeric PID.
+    observe_owned_child "$BOUNDED_CHILD_PID" 2>/dev/null || true
+    [ "$OWNED_CHILD_STATE" = LIVE ] || return 0
+    kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || true
+    sleep "$ACTIVE_POLL_INTERVAL" 2>/dev/null || true
+    observe_owned_child "$BOUNDED_CHILD_PID" 2>/dev/null || return 0
+    [ "$OWNED_CHILD_STATE" = LIVE ] || return 0
+    kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
 }
 
 run_bounded() {
-    BOUNDED_TIMEOUT=$COMMAND_TIMEOUT
-    BOUNDED_GRACE=$COMMAND_KILL_GRACE
-    BOUNDED_VERIFY=$COMMAND_KILL_VERIFY
+    ACTIVE_POLL_INTERVAL=$COMMAND_POLL_INTERVAL
+    ACTIVE_RUN_POLLS=$COMMAND_RUN_POLLS
+    ACTIVE_TERM_POLLS=$COMMAND_TERM_POLLS
+    ACTIVE_KILL_POLLS=$COMMAND_KILL_POLLS
 
-    # Start the command directly so pathname opens performed by the command are
-    # inside the bounded child rather than parent-shell redirections.
-    "$@" &
-    BOUNDED_CHILD_PID=$!
-    BOUNDED_MARKER="$OUT/.watchdog.$$.${BOUNDED_CHILD_PID}.timeout"
-    BOUNDED_FAULT="$OUT/.watchdog.$$.${BOUNDED_CHILD_PID}.fault"
-    if ! rm -f "$BOUNDED_MARKER" "$BOUNDED_FAULT" 2>/dev/null; then
-        kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || true
-        sleep "$BOUNDED_GRACE" 2>/dev/null || true
-        kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
-        wait "$BOUNDED_CHILD_PID" 2>/dev/null || true
+    LAST_BOUNDED_DETAIL=starting
+    LAST_BOUNDED_TERM_SENT=0
+    LAST_BOUNDED_KILL_LIVE=0
+    LAST_BOUNDED_KILL_SENT=0
+    LAST_BOUNDED_KILL_TERMINATED=0
+    LAST_BOUNDED_CHILD_REAPED=0
+    LAST_BOUNDED_CHILD_STATUS=125
+    LAST_BOUNDED_CHILD_PID=
+    OWNED_CHILD_PARENT_PID=
+    OWNED_CHILD_START_TIME=
+    if ! read_current_process_id; then
+        LAST_BOUNDED_DETAIL=parent_identity_unavailable
         return 125
     fi
+    OWNED_CHILD_EXPECTED_PARENT_PID=$CURRENT_PROCESS_PID
 
-    (
-        WATCHDOG_SLEEP_PID=
-        if ! watchdog_delay "$BOUNDED_TIMEOUT"; then
-            printf '%s\n' "initial_delay_failed" > "$BOUNDED_FAULT" 2>/dev/null || true
-            kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || true
-            watchdog_delay "$BOUNDED_GRACE" >/dev/null 2>&1 || true
-            kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
-            exit 125
-        fi
-
-        if ! printf '%s\n' "timeout=1" > "$BOUNDED_MARKER"; then
-            printf '%s\n' "timeout_marker_write_failed" > "$BOUNDED_FAULT" 2>/dev/null || true
-            kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || true
-            watchdog_delay "$BOUNDED_GRACE" >/dev/null 2>&1 || true
-            kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
-            exit 125
-        fi
-
-        kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || exit 124
-        if ! watchdog_delay "$BOUNDED_GRACE"; then
-            printf '%s\n' "kill_grace_failed" > "$BOUNDED_FAULT" 2>/dev/null || true
-            kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
-            exit 125
-        fi
-        kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
-        if ! watchdog_delay "$BOUNDED_VERIFY"; then
-            printf '%s\n' "kill_verify_delay_failed" > "$BOUNDED_FAULT" 2>/dev/null || true
-            exit 125
-        fi
-        if kill -0 "$BOUNDED_CHILD_PID" 2>/dev/null; then
-            printf '%s\n' "child_survived_kill" > "$BOUNDED_FAULT" 2>/dev/null || true
-            exit 125
-        fi
-        exit 124
-    ) &
-    BOUNDED_WATCHDOG_PID=$!
+    # The command is the only background child. All target pathname opens occur
+    # in this child; the parent never redirects a target candidate into it.
+    "$@" &
+    BOUNDED_CHILD_PID=$!
     LAST_BOUNDED_CHILD_PID=$BOUNDED_CHILD_PID
-    LAST_BOUNDED_WATCHDOG_PID=$BOUNDED_WATCHDOG_PID
+    BOUNDED_OUTCOME=
 
-    wait "$BOUNDED_CHILD_PID"
-    BOUNDED_CHILD_STATUS=$?
-    # Keep this cancellation/reap sequence free of intervening process starts:
-    # it closes the watchdog immediately after the owned child is reaped.
-    BOUNDED_CANCELLED=0
-    if kill -TERM "$BOUNDED_WATCHDOG_PID" 2>/dev/null; then
-        BOUNDED_CANCELLED=1
-    fi
-    wait "$BOUNDED_WATCHDOG_PID" 2>/dev/null
-    BOUNDED_WATCHDOG_STATUS=$?
-
-    LAST_BOUNDED_DETAIL=completed
-    if [ -e "$BOUNDED_FAULT" ] || [ "$BOUNDED_WATCHDOG_STATUS" -eq 125 ]; then
-        BOUNDED_RESULT=125
-        LAST_BOUNDED_DETAIL=watchdog_internal_failure
-        if is_regular_nonsymlink "$BOUNDED_FAULT"; then
-            IFS= read -r LAST_BOUNDED_DETAIL < "$BOUNDED_FAULT" || LAST_BOUNDED_DETAIL=watchdog_internal_failure
+    RUN_POLL_COUNT=0
+    while [ "$RUN_POLL_COUNT" -lt "$ACTIVE_RUN_POLLS" ]; do
+        if ! observe_owned_child "$BOUNDED_CHILD_PID"; then
+            BOUNDED_OUTCOME=internal
+            LAST_BOUNDED_DETAIL=run_state_unavailable
+            break
         fi
-    elif [ -e "$BOUNDED_MARKER" ]; then
-        BOUNDED_RESULT=124
-        LAST_BOUNDED_DETAIL=deadline_reached
-    elif [ "$BOUNDED_CANCELLED" -eq 1 ]; then
-        BOUNDED_RESULT=$BOUNDED_CHILD_STATUS
-        LAST_BOUNDED_DETAIL=child_completed
-    else
-        BOUNDED_RESULT=125
-        LAST_BOUNDED_DETAIL=watchdog_state_unknown
+        if [ "$OWNED_CHILD_STATE" != LIVE ]; then
+            BOUNDED_OUTCOME=child
+            LAST_BOUNDED_DETAIL=child_completed
+            break
+        fi
+        if ! sleep "$ACTIVE_POLL_INTERVAL"; then
+            BOUNDED_OUTCOME=internal
+            LAST_BOUNDED_DETAIL=run_poll_sleep_failed
+            break
+        fi
+        RUN_POLL_COUNT=$((RUN_POLL_COUNT + 1))
+    done
+
+    if [ -z "$BOUNDED_OUTCOME" ]; then
+        if ! observe_owned_child "$BOUNDED_CHILD_PID"; then
+            BOUNDED_OUTCOME=internal
+            LAST_BOUNDED_DETAIL=deadline_state_unavailable
+        elif [ "$OWNED_CHILD_STATE" != LIVE ]; then
+            BOUNDED_OUTCOME=child
+            LAST_BOUNDED_DETAIL=child_completed_at_deadline
+        else
+            BOUNDED_OUTCOME=timeout
+            LAST_BOUNDED_DETAIL=term_phase
+            if kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null; then
+                LAST_BOUNDED_TERM_SENT=1
+            else
+                BOUNDED_OUTCOME=internal
+                LAST_BOUNDED_DETAIL=term_signal_failed
+            fi
+        fi
     fi
-    rm -f "$BOUNDED_MARKER" "$BOUNDED_FAULT" 2>/dev/null || BOUNDED_RESULT=125
-    return "$BOUNDED_RESULT"
+
+    if [ "$BOUNDED_OUTCOME" = timeout ]; then
+        poll_owned_child "$ACTIVE_TERM_POLLS"
+        TERM_POLL_STATUS=$?
+        case "$TERM_POLL_STATUS:$OWNED_CHILD_STATE" in
+            0:*) LAST_BOUNDED_DETAIL=term_terminated_child ;;
+            1:LIVE)
+                LAST_BOUNDED_KILL_LIVE=1
+                LAST_BOUNDED_DETAIL=kill_phase
+                if kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null; then
+                    LAST_BOUNDED_KILL_SENT=1
+                    poll_owned_child "$ACTIVE_KILL_POLLS"
+                    KILL_POLL_STATUS=$?
+                    if [ "$KILL_POLL_STATUS" -eq 0 ] && [ "$OWNED_CHILD_STATE" != LIVE ]; then
+                        LAST_BOUNDED_KILL_TERMINATED=1
+                        LAST_BOUNDED_DETAIL=kill_terminated_child
+                    else
+                        BOUNDED_OUTCOME=internal
+                        LAST_BOUNDED_DETAIL=child_survived_kill
+                    fi
+                else
+                    BOUNDED_OUTCOME=internal
+                    LAST_BOUNDED_DETAIL=kill_signal_failed
+                fi
+                ;;
+            *)
+                BOUNDED_OUTCOME=internal
+                LAST_BOUNDED_DETAIL=term_poll_failed
+                ;;
+        esac
+    fi
+
+    if [ "$BOUNDED_OUTCOME" = internal ]; then
+        force_owned_child_stop
+    fi
+
+    # SIGNAL BARRIER: there is no kill invocation below this point. The owned
+    # child is reaped exactly once only after every possible signal path ends.
+    wait "$BOUNDED_CHILD_PID"
+    LAST_BOUNDED_CHILD_STATUS=$?
+    LAST_BOUNDED_CHILD_REAPED=1
+
+    case "$BOUNDED_OUTCOME" in
+        child) return "$LAST_BOUNDED_CHILD_STATUS" ;;
+        timeout) return 124 ;;
+        *) return 125 ;;
+    esac
 }
 
 HARD_TIMEOUT_SELFTEST=FAIL
@@ -306,12 +408,14 @@ rm -f "$SELFTEST_PID_FILE" 2>/dev/null || {
     record_failure "hard_timeout_selftest_failed:cannot_prepare"
     finish_incomplete
 }
-SAVED_COMMAND_TIMEOUT=$COMMAND_TIMEOUT
-SAVED_COMMAND_KILL_GRACE=$COMMAND_KILL_GRACE
-SAVED_COMMAND_KILL_VERIFY=$COMMAND_KILL_VERIFY
-COMMAND_TIMEOUT=$SELFTEST_TIMEOUT
-COMMAND_KILL_GRACE=$SELFTEST_KILL_GRACE
-COMMAND_KILL_VERIFY=$SELFTEST_KILL_VERIFY
+SAVED_COMMAND_POLL_INTERVAL=$COMMAND_POLL_INTERVAL
+SAVED_COMMAND_RUN_POLLS=$COMMAND_RUN_POLLS
+SAVED_COMMAND_TERM_POLLS=$COMMAND_TERM_POLLS
+SAVED_COMMAND_KILL_POLLS=$COMMAND_KILL_POLLS
+COMMAND_POLL_INTERVAL=$SELFTEST_POLL_INTERVAL
+COMMAND_RUN_POLLS=$SELFTEST_RUN_POLLS
+COMMAND_TERM_POLLS=$SELFTEST_TERM_POLLS
+COMMAND_KILL_POLLS=$SELFTEST_KILL_POLLS
 run_bounded /bin/sh -c '
     printf "%s\n" "$$" > "$1" || exit 125
     trap "" TERM
@@ -319,10 +423,15 @@ run_bounded /bin/sh -c '
 ' sh "$SELFTEST_PID_FILE" "$SELFTEST_NATURAL_DELAY" >/dev/null 2>&1
 SELFTEST_STATUS=$?
 SELFTEST_CHILD_PID=$LAST_BOUNDED_CHILD_PID
-SELFTEST_WATCHDOG_PID=$LAST_BOUNDED_WATCHDOG_PID
-COMMAND_TIMEOUT=$SAVED_COMMAND_TIMEOUT
-COMMAND_KILL_GRACE=$SAVED_COMMAND_KILL_GRACE
-COMMAND_KILL_VERIFY=$SAVED_COMMAND_KILL_VERIFY
+SELFTEST_CHILD_STATUS=$LAST_BOUNDED_CHILD_STATUS
+SELFTEST_KILL_LIVE=$LAST_BOUNDED_KILL_LIVE
+SELFTEST_KILL_SENT=$LAST_BOUNDED_KILL_SENT
+SELFTEST_KILL_TERMINATED=$LAST_BOUNDED_KILL_TERMINATED
+SELFTEST_CHILD_REAPED=$LAST_BOUNDED_CHILD_REAPED
+COMMAND_POLL_INTERVAL=$SAVED_COMMAND_POLL_INTERVAL
+COMMAND_RUN_POLLS=$SAVED_COMMAND_RUN_POLLS
+COMMAND_TERM_POLLS=$SAVED_COMMAND_TERM_POLLS
+COMMAND_KILL_POLLS=$SAVED_COMMAND_KILL_POLLS
 
 SELFTEST_RECORDED_PID=
 if is_regular_nonsymlink "$SELFTEST_PID_FILE"; then
@@ -339,10 +448,18 @@ elif [ "$SELFTEST_PID_VALID" -ne 1 ]; then
     SELFTEST_REASON=invalid_child_pid_record
 elif [ "$SELFTEST_RECORDED_PID" != "$SELFTEST_CHILD_PID" ]; then
     SELFTEST_REASON=child_pid_mismatch
-elif kill -0 "$SELFTEST_RECORDED_PID" 2>/dev/null; then
-    SELFTEST_REASON=child_survived
-elif kill -0 "$SELFTEST_WATCHDOG_PID" 2>/dev/null; then
-    SELFTEST_REASON=watchdog_survived
+elif [ "$SELFTEST_KILL_LIVE" -ne 1 ]; then
+    SELFTEST_REASON=child_not_live_before_kill
+elif [ "$SELFTEST_KILL_SENT" -ne 1 ]; then
+    SELFTEST_REASON=kill_not_issued
+elif [ "$SELFTEST_KILL_TERMINATED" -ne 1 ]; then
+    SELFTEST_REASON=kill_not_proven
+elif [ "$SELFTEST_CHILD_REAPED" -ne 1 ]; then
+    SELFTEST_REASON=child_not_reaped
+elif [ "$SELFTEST_CHILD_STATUS" -le 128 ]; then
+    SELFTEST_REASON=child_not_signal_terminated
+elif [ -e "$PROCESS_ROOT/$SELFTEST_RECORDED_PID/stat" ]; then
+    SELFTEST_REASON=child_still_present_after_reap
 fi
 if [ -z "$SELFTEST_REASON" ]; then
     HARD_TIMEOUT_SELFTEST=PASS
@@ -358,7 +475,7 @@ CAPABILITY_TEMP="$OUT/.CAPABILITIES.txt.tmp"
 CAPABILITY_WRITE_OK=1
 if ! printf '%s\n' \
     "schema=1" \
-    "hard_timeout.backend=portable_shell_watchdog" \
+    "hard_timeout.backend=parent_proc_state_machine" \
     "hard_timeout.selftest=$HARD_TIMEOUT_SELFTEST" \
     "shell.path=/bin/sh" > "$CAPABILITY_TEMP"
 then
@@ -370,7 +487,7 @@ append_capability_command() {
     shift
     CAPABILITY_COMMAND_TEMP="$OUT/.capability-${CAPABILITY_LABEL}.tmp"
     rm -f "$CAPABILITY_COMMAND_TEMP" 2>/dev/null || return 1
-    run_bounded /bin/sh -c 'ulimit -f 8; exec "$@"' sh "$@" > "$CAPABILITY_COMMAND_TEMP" 2>&1
+    run_bounded /bin/sh -c 'ulimit -f 8 >/dev/null 2>&1 || exit 126; exec "$@"' sh "$@" > "$CAPABILITY_COMMAND_TEMP" 2>&1
     CAPABILITY_COMMAND_STATUS=$?
     is_regular_nonsymlink "$CAPABILITY_COMMAND_TEMP" || return 1
     printf '%s.status=%s\n' "$CAPABILITY_LABEL" "$CAPABILITY_COMMAND_STATUS" >> "$CAPABILITY_TEMP" || return 1
@@ -403,7 +520,7 @@ capture_mandatory() {
     OUTPUT_FILE=$2
     shift 2
     TEMP_FILE="$OUT/.$OUTPUT_FILE.tmp"
-    if (ulimit -f "$OUTPUT_BLOCK_LIMIT"; run_bounded "$@") > "$TEMP_FILE" 2>&1; then
+    if (ulimit -f "$OUTPUT_BLOCK_LIMIT" || exit 126; run_bounded "$@") > "$TEMP_FILE" 2>&1; then
         if ! commit_regular_file "$TEMP_FILE" "$OUT/$OUTPUT_FILE"; then
             record_failure "$LABEL:cannot_commit_output"
         fi
@@ -442,7 +559,7 @@ else
 fi
 if [ "$FRAMEBUFFER_WRITE_OK" -eq 1 ]; then
     if command -v fbset >/dev/null 2>&1; then
-        if (ulimit -f "$OUTPUT_BLOCK_LIMIT"; run_bounded fbset) >> "$FRAMEBUFFER_TEMP" 2>&1; then
+        if (ulimit -f "$OUTPUT_BLOCK_LIMIT" || exit 126; run_bounded fbset) >> "$FRAMEBUFFER_TEMP" 2>&1; then
             record_optional "fbset=OK"
         else
             record_optional "fbset=SKIPPED:failed_or_timed_out"
@@ -521,7 +638,7 @@ if [ -n "$HASH_MODE" ]; then
             "$INTERNAL_ROOT/application/bin"
         do
             [ -d "$HANDLER_DIRECTORY" ] || continue
-            if (ulimit -f "$OUTPUT_BLOCK_LIMIT"; run_bounded ls -1 "$HANDLER_DIRECTORY") > "$HANDLER_WORK" 2>/dev/null; then
+            if (ulimit -f "$OUTPUT_BLOCK_LIMIT" || exit 126; run_bounded ls -1 "$HANDLER_DIRECTORY") > "$HANDLER_WORK" 2>/dev/null; then
                 if ! awk -v prefix="$HANDLER_DIRECTORY/" \
                     'index($0, "usb") || index($0, "Usb") { print prefix $0 }' \
                     "$HANDLER_WORK" >> "$HANDLER_CANDIDATES"
