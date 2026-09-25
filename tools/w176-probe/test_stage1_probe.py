@@ -68,6 +68,11 @@ class ProbeFixture:
                 "INTERNAL_ROOT=": f"INTERNAL_ROOT={shlex.quote(str(self.internal))}",
                 "COMMAND_TIMEOUT=5": "COMMAND_TIMEOUT=1",
                 "COMMAND_KILL_GRACE=1": "COMMAND_KILL_GRACE=0.2",
+                "COMMAND_KILL_VERIFY=1": "COMMAND_KILL_VERIFY=0.2",
+                "SELFTEST_TIMEOUT=1": "SELFTEST_TIMEOUT=0.1",
+                "SELFTEST_KILL_GRACE=1": "SELFTEST_KILL_GRACE=0.1",
+                "SELFTEST_KILL_VERIFY=1": "SELFTEST_KILL_VERIFY=0.1",
+                "SELFTEST_NATURAL_DELAY=4": "SELFTEST_NATURAL_DELAY=0.8",
             },
         }
         for name, substitutions in replacements.items():
@@ -82,37 +87,27 @@ class ProbeFixture:
             destination.chmod(source.stat().st_mode & 0o777)
 
     def _install_commands(self) -> None:
-        for name in ("awk", "cat", "cp", "dirname", "ls", "mkdir", "mv", "pwd", "sed", "uname", "wc"):
+        for name in (
+            "awk",
+            "cat",
+            "cp",
+            "dirname",
+            "ls",
+            "mkdir",
+            "mv",
+            "pwd",
+            "rm",
+            "sed",
+            "sleep",
+            "uname",
+            "wc",
+        ):
             source = shutil.which(name)
             if not source:
                 raise unittest.SkipTest(f"host command unavailable: {name}")
             (self.bin / name).symlink_to(source)
         self.write_command("ps", "#!/bin/sh\nprintf '%s\\n' 'PID COMMAND' '1 init'\n")
-        self.write_command(
-            "timeout",
-            f"""#!{sys.executable}
-import os
-import signal
-import subprocess
-import sys
-
-if len(sys.argv) < 5 or sys.argv[1] != "-k":
-    raise SystemExit(125)
-kill_grace = float(sys.argv[2])
-seconds = float(sys.argv[3])
-process = subprocess.Popen(sys.argv[4:], start_new_session=True)
-try:
-    raise SystemExit(process.wait(timeout=seconds))
-except subprocess.TimeoutExpired:
-    os.killpg(process.pid, signal.SIGTERM)
-    try:
-        process.wait(timeout=kill_grace)
-    except subprocess.TimeoutExpired:
-        os.killpg(process.pid, signal.SIGKILL)
-        process.wait()
-    raise SystemExit(124)
-""",
-        )
+        self.write_command("timeout", "#!/bin/sh\nprintf '%s\\n' 'fixture timeout help'\n")
         self.write_command(
             "sha256sum",
             f"""#!{sys.executable}
@@ -132,6 +127,13 @@ for name in sys.argv[1:]:
             path.unlink()
         path.write_text(content)
         path.chmod(0o755)
+
+    def replace_payload_literal(self, name: str, original: str, replacement: str) -> None:
+        path = self.usb / name
+        content = path.read_text()
+        if content.count(original) != 1:
+            raise AssertionError(f"unexpected test payload literal occurrence: {name}: {original}")
+        path.write_text(content.replace(original, replacement))
 
     def fail_mv_to(self, destination: Path, allow_matches: int = 0) -> None:
         real_mv = shutil.which("mv")
@@ -224,6 +226,10 @@ class Stage1ProbeTests(unittest.TestCase):
         self.assertIn("SYS_BLOCK_ROOT=/sys/block", guard)
         self.assertIn("DEV_ROOT=/dev", guard)
         self.assertIn("DEVICE_TEST=-b", guard)
+        stage = (SOURCE_DIR / "stage1_probe.sh").read_text()
+        self.assertNotIn("timeout -k", stage)
+        self.assertNotIn("busybox timeout", stage)
+        self.assertIn("hard_timeout.backend=portable_shell_watchdog", stage)
 
     def test_inherited_test_mode_does_not_redirect_deployable_guard(self):
         environment = {
@@ -363,14 +369,73 @@ class Stage1ProbeTests(unittest.TestCase):
         self.assertIn("missing_command:ps", (output / "ERRORS.txt").read_text())
         self.assertFalse((output / "COMPLETE").exists())
 
-    def test_missing_hard_timeout_fails_closed(self):
+    def test_external_timeout_is_diagnostic_only(self):
         (self.fixture.bin / "timeout").unlink()
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("timeout.command=UNAVAILABLE", (output / "CAPABILITIES.txt").read_text())
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_missing_sleep_primitive_fails_closed_before_collection(self):
+        (self.fixture.bin / "sleep").unlink()
         result = self.fixture.run_entry()
         output = self.fixture.outputs()[-1]
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
-        self.assertIn("missing_hard_timeout:TERM_then_KILL", (output / "ERRORS.txt").read_text())
+        self.assertIn("missing_command:sleep", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "uname.txt").exists())
         self.assertFalse((output / "COMPLETE").exists())
+
+    def test_timeout_selftest_failure_is_finite_and_prevents_collection(self):
+        self.fixture.replace_payload_literal(
+            "stage1_probe.sh",
+            '        kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true\n'
+            '        if ! watchdog_delay "$BOUNDED_VERIFY"; then',
+            '        kill -0 "$BOUNDED_CHILD_PID" 2>/dev/null || true\n'
+            '        if ! watchdog_delay "$BOUNDED_VERIFY"; then',
+        )
+        started = time.monotonic()
+        result = self.fixture.run_entry(timeout=5)
+        elapsed = time.monotonic() - started
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertLess(elapsed, 3)
+        self.assertIn("hard_timeout_selftest_failed", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "uname.txt").exists())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_timeout_selftest_success_precedes_collection(self):
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        capabilities = (output / "CAPABILITIES.txt").read_text()
+        self.assertIn("hard_timeout.backend=portable_shell_watchdog", capabilities)
+        self.assertIn("hard_timeout.selftest=PASS", capabilities)
+        self.assertIn("timeout_help.status=0", capabilities)
+        self.assertTrue((output / "uname.txt").is_file())
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_diagnostic_command_exit_status_is_preserved_and_nonblocking(self):
+        self.fixture.write_command("timeout", "#!/bin/sh\nprintf '%s\\n' diagnostic\nexit 7\n")
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        capabilities = (output / "CAPABILITIES.txt").read_text()
+        self.assertIn("timeout_help.status=7", capabilities)
+        self.assertIn("timeout_help.output.1=diagnostic", capabilities)
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_hanging_diagnostic_is_bounded_and_nonblocking(self):
+        self.fixture.write_command("timeout", "#!/bin/sh\ntrap '' TERM\nwhile :; do :; done\n")
+        started = time.monotonic()
+        result = self.fixture.run_entry(timeout=8)
+        elapsed = time.monotonic() - started
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertLess(elapsed, 4)
+        self.assertIn("timeout_help.status=124", (output / "CAPABILITIES.txt").read_text())
+        self.assertTrue((output / "COMPLETE").is_file())
 
     def test_special_and_symlink_appinfo_are_skipped(self):
         appinfo_dir = self.fixture.internal / "application/etc"
@@ -413,7 +478,7 @@ class Stage1ProbeTests(unittest.TestCase):
         self.assertTrue((output / "COMPLETE").exists())
 
     def test_hanging_optional_operation_times_out(self):
-        self.fixture.write_command("fbset", "#!/bin/sh\n/bin/sleep 30\n")
+        self.fixture.write_command("fbset", "#!/bin/sh\nexec /bin/sleep 30\n")
         started = time.monotonic()
         result = self.fixture.run_entry(timeout=8)
         elapsed = time.monotonic() - started
@@ -437,13 +502,80 @@ class Stage1ProbeTests(unittest.TestCase):
         elapsed = time.monotonic() - started
         output = self.fixture.outputs()[-1]
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertLess(elapsed, 4)
+        self.assertLess(elapsed, 7)
         self.assertIn("fbset=SKIPPED:failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
         pid = int(pid_file.read_text().strip())
         with self.assertRaises(ProcessLookupError):
             os.kill(pid, 0)
         self.assertTrue((output / "COMPLETE").is_file())
         self.assertFalse((output / "COMPLETE").is_symlink())
+
+    def test_timeout_child_that_accepts_term_is_reaped(self):
+        pid_file = self.fixture.root / "term-responsive.pid"
+        self.fixture.write_command(
+            "fbset",
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$$\" > {shlex.quote(str(pid_file))}\n"
+            "trap 'exit 23' TERM\n"
+            "while :; do :; done\n",
+        )
+        result = self.fixture.run_entry(timeout=8)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("fbset=SKIPPED:failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        pid = int(pid_file.read_text().strip())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_watchdog_and_delay_processes_are_cleaned_up(self):
+        process_log = self.fixture.root / "sleep-processes.txt"
+        self.fixture.write_command(
+            "sleep",
+            f"#!{sys.executable}\n"
+            "import os\n"
+            "import sys\n"
+            "import time\n"
+            f"with open({str(process_log)!r}, 'a') as stream:\n"
+            "    stream.write(f'{os.getpid()} {os.getppid()}\\n')\n"
+            "time.sleep(float(sys.argv[1]))\n",
+        )
+        result = self.fixture.run_entry()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recorded = {
+            int(value)
+            for line in process_log.read_text().splitlines()
+            for value in line.split()
+            if value.isdigit()
+        }
+        self.assertTrue(recorded)
+        for pid in recorded:
+            try:
+                os.kill(pid, 0)
+            except (ProcessLookupError, PermissionError):
+                continue
+            self.fail(f"fixture process {pid} survived watchdog cleanup")
+
+    def test_near_deadline_completion_has_no_late_stray_signal(self):
+        self.fixture.write_command("fbset", "#!/bin/sh\nexec /bin/sleep 0.8\n")
+        for _ in range(8):
+            result = self.fixture.run_entry(timeout=8)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            victim = subprocess.Popen(["/bin/sleep", "0.35"])
+            self.assertEqual(victim.wait(timeout=2), 0)
+        for output in self.fixture.outputs():
+            self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_repeated_fast_completion_cancels_old_watchdogs(self):
+        handler_directory = self.fixture.internal / "application/bin"
+        for index in range(20):
+            (handler_directory / f"usb-fast-{index}").write_text("handler\n")
+        result = self.fixture.run_entry(timeout=10)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        victim = subprocess.Popen(["/bin/sleep", "1.2"])
+        self.assertEqual(victim.wait(timeout=3), 0)
+        output = self.fixture.outputs()[-1]
+        self.assertTrue((output / "COMPLETE").is_file())
 
     def test_fifo_replacement_open_is_inside_timeout(self):
         appinfo_dir = self.fixture.internal / "application/etc"
@@ -480,8 +612,7 @@ class Stage1ProbeTests(unittest.TestCase):
             "ls",
             "#!/bin/sh\n"
             f"if [ \"$#\" -eq 2 ] && [ \"$1\" = -1 ] && [ \"$2\" = {shlex.quote(str(hanging_directory))} ]; then\n"
-            "    /bin/sleep 30\n"
-            "    exit 1\n"
+            "    exec /bin/sleep 30\n"
             "fi\n"
             f"exec {shlex.quote(real_ls)} \"$@\"\n",
         )
@@ -499,7 +630,7 @@ class Stage1ProbeTests(unittest.TestCase):
 
     def test_hanging_handler_hash_times_out(self):
         (self.fixture.internal / "application/bin/usb-handler").write_text("handler\n")
-        self.fixture.write_command("sha256sum", "#!/bin/sh\n/bin/sleep 30\n")
+        self.fixture.write_command("sha256sum", "#!/bin/sh\nexec /bin/sleep 30\n")
         started = time.monotonic()
         result = self.fixture.run_entry(timeout=8)
         elapsed = time.monotonic() - started
@@ -533,8 +664,7 @@ class Stage1ProbeTests(unittest.TestCase):
             "cat",
             "#!/bin/sh\n"
             f"if [ \"$#\" -eq 1 ] && [ \"$1\" = {shlex.quote(str(hanging_file))} ]; then\n"
-            "    /bin/sleep 30\n"
-            "    exit 1\n"
+            "    exec /bin/sleep 30\n"
             "fi\n"
             f"exec {shlex.quote(real_cat)} \"$@\"\n",
         )
@@ -595,6 +725,16 @@ class Stage1ProbeTests(unittest.TestCase):
         output = self.fixture.outputs()[-1]
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("summary:cannot_write_output", (output / "ERRORS.txt").read_text())
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_capabilities_finalization_failure_has_no_complete(self):
+        destination = self.fixture.usb / "stage1-probe/CAPABILITIES.txt"
+        self.fixture.fail_mv_to(destination)
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("capabilities:cannot_write_output", (output / "ERRORS.txt").read_text())
         self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
         self.assertFalse((output / "COMPLETE").exists())
 

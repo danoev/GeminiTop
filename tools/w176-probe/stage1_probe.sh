@@ -11,6 +11,11 @@ SYS_ROOT=/sys
 INTERNAL_ROOT=
 COMMAND_TIMEOUT=5
 COMMAND_KILL_GRACE=1
+COMMAND_KILL_VERIFY=1
+SELFTEST_TIMEOUT=1
+SELFTEST_KILL_GRACE=1
+SELFTEST_KILL_VERIFY=1
+SELFTEST_NATURAL_DELAY=4
 export PATH
 
 SCRIPT_DIR=$(cd -P "$(dirname "$0")" 2>/dev/null && pwd -P) || {
@@ -164,24 +169,20 @@ if ! write_status INCOMPLETE; then
 fi
 
 MISSING_COMMAND=0
-for REQUIRED_COMMAND in awk cat cp ls mkdir mv ps uname wc; do
+for REQUIRED_COMMAND in awk cat cp ls mkdir mv ps rm sleep uname wc; do
     if ! command -v "$REQUIRED_COMMAND" >/dev/null 2>&1; then
         record_failure "missing_command:$REQUIRED_COMMAND"
         MISSING_COMMAND=1
     fi
 done
-
-TIMEOUT_MODE=
-if command -v timeout >/dev/null 2>&1 &&
-    timeout -k 1 1 /bin/sh -c ':' >/dev/null 2>&1
-then
-    TIMEOUT_MODE=timeout
-elif command -v busybox >/dev/null 2>&1 &&
-    busybox timeout -k 1 1 /bin/sh -c ':' >/dev/null 2>&1
-then
-    TIMEOUT_MODE=busybox
-else
-    record_failure "missing_hard_timeout:TERM_then_KILL"
+for REQUIRED_BUILTIN in kill wait; do
+    if ! command -v "$REQUIRED_BUILTIN" >/dev/null 2>&1; then
+        record_failure "missing_shell_primitive:$REQUIRED_BUILTIN"
+        MISSING_COMMAND=1
+    fi
+done
+if [ ! -x /bin/sh ]; then
+    record_failure "missing_shell:/bin/sh"
     MISSING_COMMAND=1
 fi
 
@@ -189,13 +190,213 @@ if [ "$MISSING_COMMAND" -ne 0 ]; then
     finish_incomplete
 fi
 
-run_bounded() {
-    if [ "$TIMEOUT_MODE" = timeout ]; then
-        timeout -k "$COMMAND_KILL_GRACE" "$COMMAND_TIMEOUT" "$@"
-    else
-        busybox timeout -k "$COMMAND_KILL_GRACE" "$COMMAND_TIMEOUT" "$@"
-    fi
+watchdog_delay() {
+    # A cancelled watchdog must also terminate and reap its active sleep child.
+    WATCHDOG_SLEEP_PID=
+    watchdog_cancel() {
+        if [ -n "$WATCHDOG_SLEEP_PID" ]; then
+            kill -TERM "$WATCHDOG_SLEEP_PID" 2>/dev/null || true
+            wait "$WATCHDOG_SLEEP_PID" 2>/dev/null || true
+        fi
+        exit 0
+    }
+    trap 'watchdog_cancel' HUP INT TERM
+    sleep "$1" &
+    WATCHDOG_SLEEP_PID=$!
+    wait "$WATCHDOG_SLEEP_PID"
+    WATCHDOG_DELAY_STATUS=$?
+    WATCHDOG_SLEEP_PID=
+    trap - HUP INT TERM
+    return "$WATCHDOG_DELAY_STATUS"
 }
+
+run_bounded() {
+    BOUNDED_TIMEOUT=$COMMAND_TIMEOUT
+    BOUNDED_GRACE=$COMMAND_KILL_GRACE
+    BOUNDED_VERIFY=$COMMAND_KILL_VERIFY
+
+    # Start the command directly so pathname opens performed by the command are
+    # inside the bounded child rather than parent-shell redirections.
+    "$@" &
+    BOUNDED_CHILD_PID=$!
+    BOUNDED_MARKER="$OUT/.watchdog.$$.${BOUNDED_CHILD_PID}.timeout"
+    BOUNDED_FAULT="$OUT/.watchdog.$$.${BOUNDED_CHILD_PID}.fault"
+    if ! rm -f "$BOUNDED_MARKER" "$BOUNDED_FAULT" 2>/dev/null; then
+        kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || true
+        sleep "$BOUNDED_GRACE" 2>/dev/null || true
+        kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
+        wait "$BOUNDED_CHILD_PID" 2>/dev/null || true
+        return 125
+    fi
+
+    (
+        WATCHDOG_SLEEP_PID=
+        if ! watchdog_delay "$BOUNDED_TIMEOUT"; then
+            printf '%s\n' "initial_delay_failed" > "$BOUNDED_FAULT" 2>/dev/null || true
+            kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || true
+            watchdog_delay "$BOUNDED_GRACE" >/dev/null 2>&1 || true
+            kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
+            exit 125
+        fi
+
+        if ! printf '%s\n' "timeout=1" > "$BOUNDED_MARKER"; then
+            printf '%s\n' "timeout_marker_write_failed" > "$BOUNDED_FAULT" 2>/dev/null || true
+            kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || true
+            watchdog_delay "$BOUNDED_GRACE" >/dev/null 2>&1 || true
+            kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
+            exit 125
+        fi
+
+        kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null || exit 124
+        if ! watchdog_delay "$BOUNDED_GRACE"; then
+            printf '%s\n' "kill_grace_failed" > "$BOUNDED_FAULT" 2>/dev/null || true
+            kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
+            exit 125
+        fi
+        kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null || true
+        if ! watchdog_delay "$BOUNDED_VERIFY"; then
+            printf '%s\n' "kill_verify_delay_failed" > "$BOUNDED_FAULT" 2>/dev/null || true
+            exit 125
+        fi
+        if kill -0 "$BOUNDED_CHILD_PID" 2>/dev/null; then
+            printf '%s\n' "child_survived_kill" > "$BOUNDED_FAULT" 2>/dev/null || true
+            exit 125
+        fi
+        exit 124
+    ) &
+    BOUNDED_WATCHDOG_PID=$!
+    LAST_BOUNDED_CHILD_PID=$BOUNDED_CHILD_PID
+    LAST_BOUNDED_WATCHDOG_PID=$BOUNDED_WATCHDOG_PID
+
+    wait "$BOUNDED_CHILD_PID"
+    BOUNDED_CHILD_STATUS=$?
+    # Keep this cancellation/reap sequence free of intervening process starts:
+    # it closes the watchdog immediately after the owned child is reaped.
+    BOUNDED_CANCELLED=0
+    if kill -TERM "$BOUNDED_WATCHDOG_PID" 2>/dev/null; then
+        BOUNDED_CANCELLED=1
+    fi
+    wait "$BOUNDED_WATCHDOG_PID" 2>/dev/null
+    BOUNDED_WATCHDOG_STATUS=$?
+
+    LAST_BOUNDED_DETAIL=completed
+    if [ -e "$BOUNDED_FAULT" ] || [ "$BOUNDED_WATCHDOG_STATUS" -eq 125 ]; then
+        BOUNDED_RESULT=125
+        LAST_BOUNDED_DETAIL=watchdog_internal_failure
+        if is_regular_nonsymlink "$BOUNDED_FAULT"; then
+            IFS= read -r LAST_BOUNDED_DETAIL < "$BOUNDED_FAULT" || LAST_BOUNDED_DETAIL=watchdog_internal_failure
+        fi
+    elif [ -e "$BOUNDED_MARKER" ]; then
+        BOUNDED_RESULT=124
+        LAST_BOUNDED_DETAIL=deadline_reached
+    elif [ "$BOUNDED_CANCELLED" -eq 1 ]; then
+        BOUNDED_RESULT=$BOUNDED_CHILD_STATUS
+        LAST_BOUNDED_DETAIL=child_completed
+    else
+        BOUNDED_RESULT=125
+        LAST_BOUNDED_DETAIL=watchdog_state_unknown
+    fi
+    rm -f "$BOUNDED_MARKER" "$BOUNDED_FAULT" 2>/dev/null || BOUNDED_RESULT=125
+    return "$BOUNDED_RESULT"
+}
+
+HARD_TIMEOUT_SELFTEST=FAIL
+SELFTEST_PID_FILE="$OUT/.hard-timeout-selftest.pid"
+rm -f "$SELFTEST_PID_FILE" 2>/dev/null || {
+    record_failure "hard_timeout_selftest_failed:cannot_prepare"
+    finish_incomplete
+}
+SAVED_COMMAND_TIMEOUT=$COMMAND_TIMEOUT
+SAVED_COMMAND_KILL_GRACE=$COMMAND_KILL_GRACE
+SAVED_COMMAND_KILL_VERIFY=$COMMAND_KILL_VERIFY
+COMMAND_TIMEOUT=$SELFTEST_TIMEOUT
+COMMAND_KILL_GRACE=$SELFTEST_KILL_GRACE
+COMMAND_KILL_VERIFY=$SELFTEST_KILL_VERIFY
+run_bounded /bin/sh -c '
+    printf "%s\n" "$$" > "$1" || exit 125
+    trap "" TERM
+    exec sleep "$2"
+' sh "$SELFTEST_PID_FILE" "$SELFTEST_NATURAL_DELAY" >/dev/null 2>&1
+SELFTEST_STATUS=$?
+SELFTEST_CHILD_PID=$LAST_BOUNDED_CHILD_PID
+SELFTEST_WATCHDOG_PID=$LAST_BOUNDED_WATCHDOG_PID
+COMMAND_TIMEOUT=$SAVED_COMMAND_TIMEOUT
+COMMAND_KILL_GRACE=$SAVED_COMMAND_KILL_GRACE
+COMMAND_KILL_VERIFY=$SAVED_COMMAND_KILL_VERIFY
+
+SELFTEST_RECORDED_PID=
+if is_regular_nonsymlink "$SELFTEST_PID_FILE"; then
+    IFS= read -r SELFTEST_RECORDED_PID < "$SELFTEST_PID_FILE" || SELFTEST_RECORDED_PID=
+fi
+case "$SELFTEST_RECORDED_PID" in
+    ''|*[!0-9]*) SELFTEST_PID_VALID=0 ;;
+    *) SELFTEST_PID_VALID=1 ;;
+esac
+SELFTEST_REASON=
+if [ "$SELFTEST_STATUS" -ne 124 ]; then
+    SELFTEST_REASON="runner_status_${SELFTEST_STATUS}_${LAST_BOUNDED_DETAIL}"
+elif [ "$SELFTEST_PID_VALID" -ne 1 ]; then
+    SELFTEST_REASON=invalid_child_pid_record
+elif [ "$SELFTEST_RECORDED_PID" != "$SELFTEST_CHILD_PID" ]; then
+    SELFTEST_REASON=child_pid_mismatch
+elif kill -0 "$SELFTEST_RECORDED_PID" 2>/dev/null; then
+    SELFTEST_REASON=child_survived
+elif kill -0 "$SELFTEST_WATCHDOG_PID" 2>/dev/null; then
+    SELFTEST_REASON=watchdog_survived
+fi
+if [ -z "$SELFTEST_REASON" ]; then
+    HARD_TIMEOUT_SELFTEST=PASS
+else
+    record_failure "hard_timeout_selftest_failed:$SELFTEST_REASON"
+fi
+rm -f "$SELFTEST_PID_FILE" 2>/dev/null || record_failure "hard_timeout_selftest_failed:cannot_cleanup"
+if [ "$HARD_TIMEOUT_SELFTEST" != PASS ] || [ "$FAILURES" -ne 0 ]; then
+    finish_incomplete
+fi
+
+CAPABILITY_TEMP="$OUT/.CAPABILITIES.txt.tmp"
+CAPABILITY_WRITE_OK=1
+if ! printf '%s\n' \
+    "schema=1" \
+    "hard_timeout.backend=portable_shell_watchdog" \
+    "hard_timeout.selftest=$HARD_TIMEOUT_SELFTEST" \
+    "shell.path=/bin/sh" > "$CAPABILITY_TEMP"
+then
+    CAPABILITY_WRITE_OK=0
+fi
+
+append_capability_command() {
+    CAPABILITY_LABEL=$1
+    shift
+    CAPABILITY_COMMAND_TEMP="$OUT/.capability-${CAPABILITY_LABEL}.tmp"
+    rm -f "$CAPABILITY_COMMAND_TEMP" 2>/dev/null || return 1
+    run_bounded /bin/sh -c 'ulimit -f 8; exec "$@"' sh "$@" > "$CAPABILITY_COMMAND_TEMP" 2>&1
+    CAPABILITY_COMMAND_STATUS=$?
+    is_regular_nonsymlink "$CAPABILITY_COMMAND_TEMP" || return 1
+    printf '%s.status=%s\n' "$CAPABILITY_LABEL" "$CAPABILITY_COMMAND_STATUS" >> "$CAPABILITY_TEMP" || return 1
+    awk -v prefix="$CAPABILITY_LABEL.output." 'NR <= 8 { print prefix NR "=" $0 }' \
+        "$CAPABILITY_COMMAND_TEMP" >> "$CAPABILITY_TEMP" || return 1
+    rm -f "$CAPABILITY_COMMAND_TEMP" 2>/dev/null || return 1
+}
+
+if command -v timeout >/dev/null 2>&1; then
+    printf '%s\n' "timeout.command=AVAILABLE" >> "$CAPABILITY_TEMP" || CAPABILITY_WRITE_OK=0
+    append_capability_command timeout_help timeout --help || CAPABILITY_WRITE_OK=0
+else
+    printf '%s\n' "timeout.command=UNAVAILABLE" >> "$CAPABILITY_TEMP" || CAPABILITY_WRITE_OK=0
+fi
+if command -v busybox >/dev/null 2>&1; then
+    printf '%s\n' "busybox.command=AVAILABLE" >> "$CAPABILITY_TEMP" || CAPABILITY_WRITE_OK=0
+    append_capability_command busybox_identity busybox || CAPABILITY_WRITE_OK=0
+else
+    printf '%s\n' "busybox.command=UNAVAILABLE" >> "$CAPABILITY_TEMP" || CAPABILITY_WRITE_OK=0
+fi
+if [ "$CAPABILITY_WRITE_OK" -ne 1 ] ||
+    ! commit_regular_file "$CAPABILITY_TEMP" "$OUT/CAPABILITIES.txt"
+then
+    record_failure "capabilities:cannot_write_output"
+    finish_incomplete
+fi
 
 capture_mandatory() {
     LABEL=$1
@@ -295,7 +496,9 @@ done
 HASH_MODE=
 if command -v sha256sum >/dev/null 2>&1; then
     HASH_MODE=sha256sum
-elif command -v busybox >/dev/null 2>&1 && busybox sha256sum --help >/dev/null 2>&1; then
+elif command -v busybox >/dev/null 2>&1 &&
+    run_bounded busybox sha256sum --help >/dev/null 2>&1
+then
     HASH_MODE=busybox
 fi
 
@@ -444,7 +647,7 @@ validate_collection_outputs() {
     for REQUIRED_OUTPUT in \
         uname.txt cpuinfo.txt mtd.txt cmdline.txt mounts.txt \
         input-devices.txt input-nodes.txt applications.txt services.txt \
-        framebuffer.txt stage1-summary.txt README.txt
+        framebuffer.txt CAPABILITIES.txt stage1-summary.txt README.txt
     do
         is_regular_nonsymlink "$OUT/$REQUIRED_OUTPUT" || return 1
     done
