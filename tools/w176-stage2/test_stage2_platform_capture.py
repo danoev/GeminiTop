@@ -77,6 +77,7 @@ class Stage2Fixture:
             "stage2_platform_capture.sh": {
                 "PATH=/usr/sbin:/usr/bin:/sbin:/bin": f"PATH={shlex.quote(str(self.bin))}",
                 "PROCESS_ROOT=/proc": f"PROCESS_ROOT={shlex.quote(str(self.proc / 'process'))}",
+                "FD_ROOT=/proc/self/fd": "FD_ROOT=/dev/fd",
                 "TARGET_ROOT=": f"TARGET_ROOT={shlex.quote(str(self.target))}",
                 "COMMAND_POLL_INTERVAL=1": "COMMAND_POLL_INTERVAL=0.01",
                 "COMMAND_RUN_POLLS=5": "COMMAND_RUN_POLLS=20",
@@ -109,13 +110,34 @@ class Stage2Fixture:
 
     def _install_commands(self) -> None:
         for name in (
-            "awk", "cat", "cp", "dirname", "mkdir", "mv", "pwd", "readlink",
-            "rm", "sed", "sleep", "wc",
+            "awk", "cat", "dd", "dirname", "mkdir", "mv", "pwd", "readlink",
+            "rm", "sed", "sleep",
         ):
             source = shutil.which(name)
             if not source:
                 raise unittest.SkipTest(f"host command unavailable: {name}")
             (self.bin / name).symlink_to(source)
+        self.write_command(
+            "stat",
+            f"#!{sys.executable}\n"
+            "import os, sys\n"
+            "args = sys.argv[1:]\n"
+            "if len(args) != 4 or args[0] != '-L' or args[1] != '-c':\n"
+            "    raise SystemExit(2)\n"
+            "fmt, path = args[2], args[3]\n"
+            "if path.startswith('/dev/fd/'):\n"
+            "    value = os.fstat(int(path.rsplit('/', 1)[1]))\n"
+            "else:\n"
+            "    value = os.stat(path)\n"
+            "mapping = {\n"
+            "    '%d': str(value.st_dev), '%i': str(value.st_ino),\n"
+            "    '%f': format(value.st_mode, 'x'), '%s': str(value.st_size),\n"
+            "    '%Y': str(int(value.st_mtime)), '%Z': str(int(value.st_ctime)),\n"
+            "}\n"
+            "for key, replacement in mapping.items():\n"
+            "    fmt = fmt.replace(key, replacement)\n"
+            "print(fmt)\n",
+        )
         process_root = self.proc / "process"
         self.write_command(
             "process_self_snapshot",
@@ -182,6 +204,63 @@ class Stage2Fixture:
             raise AssertionError(f"unexpected test literal occurrence: {original}")
         path.write_text(content.replace(original, replacement))
 
+    def move_command(self, name: str) -> Path:
+        original = self.bin / name
+        saved = self.bin / f"{name}.real"
+        original.rename(saved)
+        return saved
+
+    def install_slow_source_stat(self, source: Path, trigger: Path, delay: int = 5) -> None:
+        real_stat = self.move_command("stat")
+        self.write_command(
+            "stat",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys, time\n"
+            f"source = pathlib.Path({str(source)!r})\n"
+            f"trigger = pathlib.Path({str(trigger)!r})\n"
+            "if sys.argv[-1] == '/dev/fd/3' and not trigger.exists():\n"
+            "    if source.exists() and os.fstat(3).st_ino == source.stat().st_ino:\n"
+            "        trigger.touch()\n"
+            f"        time.sleep({delay})\n"
+            f"os.execv({str(real_stat)!r}, [{str(real_stat)!r}, *sys.argv[1:]])\n",
+        )
+
+    def install_process_override(self, trigger: Path, mode: str) -> None:
+        real_snapshot = self.move_command("process_snapshot")
+        process_root = self.proc / "process"
+        if mode == "unknown":
+            state_writer = "stream.write('malformed\\n')"
+        elif mode == "replaced":
+            state_writer = (
+                "fields = ['S', '999999'] + ['0'] * 17 + ['1', '0']\n"
+                "        stream.write(f'{pid} (replaced) ' + ' '.join(fields) + '\\n')"
+            )
+        else:
+            raise AssertionError(mode)
+        self.write_command(
+            "process_snapshot",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys\n"
+            f"trigger = pathlib.Path({str(trigger)!r})\n"
+            f"real = {str(real_snapshot)!r}\n"
+            f"root = {str(process_root)!r}\n"
+            "pid = int(sys.argv[1])\n"
+            "if not trigger.exists():\n"
+            "    os.execv(real, [real, *sys.argv[1:]])\n"
+            "directory = os.path.join(root, str(pid))\n"
+            "os.makedirs(directory, exist_ok=True)\n"
+            "with open(os.path.join(directory, 'stat'), 'w') as stream:\n"
+            f"        {state_writer}\n",
+        )
+
+    def log_wait_only_after(self, trigger: Path, wait_log: Path) -> None:
+        self.replace_stage(
+            '    wait "$BOUNDED_CHILD_PID"\n',
+            f'    [ ! -e {shlex.quote(str(trigger))} ] || '
+            f'printf "%s\\n" "$BOUNDED_CHILD_PID" >> {shlex.quote(str(wait_log))}\n'
+            '    wait "$BOUNDED_CHILD_PID"\n',
+        )
+
     def set_mounts(self, *mounts: tuple[str, Path, str]) -> None:
         lines = []
         for device, mount, filesystem in mounts:
@@ -220,17 +299,18 @@ class Stage2Fixture:
         counter = self.root / "mv-count"
         self.write_command(
             "mv",
-            "#!/bin/sh\n"
-            "LAST=\n"
-            "for ARG in \"$@\"; do LAST=$ARG; done\n"
-            f"if [ \"$LAST\" = {shlex.quote(str(destination.resolve()))} ]; then\n"
-            "  COUNT=0\n"
-            f"  [ ! -r {shlex.quote(str(counter))} ] || COUNT=$(/bin/cat {shlex.quote(str(counter))})\n"
-            "  COUNT=$((COUNT + 1))\n"
-            f"  printf '%s\\n' \"$COUNT\" > {shlex.quote(str(counter))}\n"
-            f"  [ \"$COUNT\" -le {allow} ] || exit 1\n"
-            "fi\n"
-            f"exec {shlex.quote(real_mv)} \"$@\"\n",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys\n"
+            f"destination = {str(destination.resolve())!r}\n"
+            f"counter = pathlib.Path({str(counter)!r})\n"
+            "last = os.path.abspath(sys.argv[-1])\n"
+            "if last == destination:\n"
+            "    count = int(counter.read_text()) if counter.exists() else 0\n"
+            "    count += 1\n"
+            "    counter.write_text(str(count))\n"
+            f"    if count > {allow}:\n"
+            "        raise SystemExit(1)\n"
+            f"os.execv({real_mv!r}, [{real_mv!r}, *sys.argv[1:]])\n",
         )
 
 
@@ -257,6 +337,11 @@ class Stage2CaptureTests(unittest.TestCase):
         self.assertEqual(
             {path.name for path in (output / "files").iterdir()}, set(COPY_PATHS.values())
         )
+        for source, output_name in COPY_PATHS.items():
+            self.assertEqual(
+                (output / "files" / output_name).read_bytes(),
+                (self.fixture.target / source.lstrip("/")).read_bytes(),
+            )
         self.assertNotIn("secret-user-data", "\n".join(p.read_text(errors="ignore") for p in output.rglob("*") if p.is_file()))
         checksum_paths = {line.split(None, 1)[1] for line in (output / "checksums.sha256").read_text().splitlines()}
         self.assertEqual(checksum_paths, HASH_PATHS)
@@ -288,7 +373,7 @@ class Stage2CaptureTests(unittest.TestCase):
     def test_internal_output_fallback_is_rejected(self):
         result = self.fixture.run_stage(self.fixture.target)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("not the exact removable mount point", result.stderr)
+        self.assertIn("supplied root does not contain this payload", result.stderr)
         self.assert_no_complete()
 
     def test_missing_mandatory_file_is_incomplete(self):
@@ -296,7 +381,7 @@ class Stage2CaptureTests(unittest.TestCase):
         result = self.fixture.run_entry()
         self.assertNotEqual(result.returncode, 0)
         output = self.fixture.outputs()[-1]
-        self.assertIn("mdev:source_validation_2", (output / "ERRORS.txt").read_text())
+        self.assertIn("mdev:source_acquisition_20", (output / "ERRORS.txt").read_text())
         self.assert_no_complete()
 
     def test_symlink_source_is_rejected(self):
@@ -326,7 +411,7 @@ class Stage2CaptureTests(unittest.TestCase):
         (self.fixture.target / "application/bin/Launcher").write_bytes(b"x" * 262145)
         result = self.fixture.run_entry()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("launcher:source_validation_6", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assertIn("launcher:source_acquisition_25", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
         self.assert_no_complete()
 
     def test_hash_operation_is_bounded(self):
@@ -347,36 +432,40 @@ class Stage2CaptureTests(unittest.TestCase):
         self.assertIn("hash_output_invalid", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
         self.assert_no_complete()
 
-    def test_copy_operation_is_bounded(self):
-        self.fixture.write_command("cp", "#!/bin/sh\nexec /bin/sleep 30\n")
+    def test_source_snapshot_operation_is_bounded(self):
+        self.fixture.write_command("dd", "#!/bin/sh\nexec /bin/sleep 30\n")
         result = self.fixture.run_entry(timeout=8)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("copy_failed_or_timed_out", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assertIn("launcher:source_acquisition_124", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
         self.assert_no_complete()
 
-    def test_fifo_replacement_race_is_bounded(self):
-        real_wc = shutil.which("wc")
-        assert real_wc
+    def test_source_replaced_by_fifo_during_acquisition_is_rejected(self):
         launcher = self.fixture.target / "application/bin/Launcher"
+        real_stat = self.fixture.bin / "stat.real"
+        (self.fixture.bin / "stat").rename(real_stat)
         self.fixture.write_command(
-            "wc",
-            "#!/bin/sh\n"
-            f"if [ \"$#\" -eq 2 ] && [ \"$2\" = {shlex.quote(str(launcher))} ]; then\n"
-            f"  /bin/rm -f {shlex.quote(str(launcher))}\n"
-            f"  /usr/bin/mkfifo {shlex.quote(str(launcher))}\n"
-            "fi\n"
-            f"exec {shlex.quote(real_wc)} \"$@\"\n",
+            "stat",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys\n"
+            f"source = pathlib.Path({str(launcher)!r})\n"
+            f"trigger = pathlib.Path({str(self.fixture.root / 'fifo-trigger')!r})\n"
+            "if sys.argv[-1] == '/dev/fd/3' and not trigger.exists():\n"
+            "    if os.fstat(3).st_ino == source.stat().st_ino:\n"
+            "        trigger.touch()\n"
+            "        source.unlink()\n"
+            "        os.mkfifo(source)\n"
+            f"os.execv({str(real_stat)!r}, [{str(real_stat)!r}, *sys.argv[1:]])\n",
         )
         result = self.fixture.run_entry(timeout=8)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("launcher:source_validation_4", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assertIn("launcher:source_acquisition_23", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
         self.assert_no_complete()
 
-    def test_partial_usb_copy_is_not_committed(self):
+    def test_partial_usb_snapshot_is_not_committed(self):
         self.fixture.write_command(
-            "cp",
+            "dd",
             "#!/bin/sh\n"
-            "printf partial > \"$2\"\n"
+            "printf partial\n"
             "exit 1\n",
         )
         result = self.fixture.run_entry()
@@ -418,6 +507,352 @@ class Stage2CaptureTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.fixture.usb / "stage2-platform-1/COMPLETE").is_file())
 
+    def test_direct_stage_entry_also_requires_arming(self):
+        (self.fixture.usb / "ARM_STAGE2_PLATFORM_CAPTURE").unlink()
+        result = self.fixture.run_stage(self.fixture.usb)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not armed", result.stderr)
+        self.assertEqual(self.fixture.outputs(), [])
+
+    def test_mount_path_replacement_cannot_redirect_output(self):
+        anchored = self.fixture.root / "anchored-usb"
+        replacement_sentinel = "underlying-internal-directory"
+        real_mkdir = shutil.which("mkdir")
+        assert real_mkdir
+        self.fixture.write_command(
+            "mkdir",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys\n"
+            f"usb = pathlib.Path({str(self.fixture.usb)!r})\n"
+            f"anchored = pathlib.Path({str(anchored)!r})\n"
+            "if sys.argv[1:] == ['stage2-platform'] and not anchored.exists():\n"
+            "    usb.rename(anchored)\n"
+            "    usb.mkdir()\n"
+            f"    (usb / 'SENTINEL').write_text({replacement_sentinel!r})\n"
+            f"os.execv({real_mkdir!r}, [{real_mkdir!r}, *sys.argv[1:]])\n",
+        )
+        result = self.fixture.run_entry()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((anchored / "stage2-platform/COMPLETE").is_file())
+        self.assertEqual((self.fixture.usb / "SENTINEL").read_text(), replacement_sentinel)
+        self.assertFalse((self.fixture.usb / "stage2-platform").exists())
+
+    def test_path_replacement_before_anchor_validation_fails_closed(self):
+        anchored = self.fixture.root / "prevalidation-anchor"
+        real_awk = shutil.which("awk")
+        assert real_awk
+        self.fixture.write_command(
+            "awk",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys\n"
+            f"usb = pathlib.Path({str(self.fixture.usb)!r})\n"
+            f"anchored = pathlib.Path({str(anchored)!r})\n"
+            "if not anchored.exists():\n"
+            "    usb.rename(anchored)\n"
+            "    usb.mkdir()\n"
+            f"os.execv({real_awk!r}, [{real_awk!r}, *sys.argv[1:]])\n",
+        )
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.fixture.usb / "stage2-platform").exists())
+        self.assertFalse((anchored / "stage2-platform").exists())
+
+    def test_storage_failure_after_anchoring_has_no_complete(self):
+        self.fixture.write_command(
+            "mkdir",
+            "#!/bin/sh\n"
+            "[ \"$1\" != stage2-platform ] || exit 1\n"
+            "exec /bin/mkdir \"$@\"\n",
+        )
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.fixture.outputs(), [])
+
+    def test_unknown_child_state_is_fatal_and_never_waited(self):
+        trigger = self.fixture.root / "runner-trigger"
+        wait_log = self.fixture.root / "wait-after-trigger"
+        self.fixture.install_slow_source_stat(
+            self.fixture.target / "application/bin/Launcher", trigger, delay=2
+        )
+        self.fixture.install_process_override(trigger, "unknown")
+        self.fixture.log_wait_only_after(trigger, wait_log)
+        result = self.fixture.run_entry(timeout=8)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(wait_log.exists())
+        self.assertIn("runner_fatal", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_pid_identity_replacement_is_fatal_and_never_waited(self):
+        trigger = self.fixture.root / "runner-trigger"
+        wait_log = self.fixture.root / "wait-after-trigger"
+        self.fixture.install_slow_source_stat(
+            self.fixture.target / "application/bin/Launcher", trigger, delay=2
+        )
+        self.fixture.install_process_override(trigger, "replaced")
+        self.fixture.log_wait_only_after(trigger, wait_log)
+        result = self.fixture.run_entry(timeout=8)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(wait_log.exists())
+        self.assert_no_complete()
+
+    def test_failed_kill_is_fatal_and_never_waited(self):
+        trigger = self.fixture.root / "runner-trigger"
+        wait_log = self.fixture.root / "wait-after-trigger"
+        self.fixture.install_slow_source_stat(
+            self.fixture.target / "application/bin/Launcher", trigger, delay=2
+        )
+        self.fixture.replace_stage(
+            'if ! kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+            f'if [ -e {shlex.quote(str(trigger))} ]; then :; '
+            'elif ! kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+        )
+        self.fixture.replace_stage(
+            'if kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+            f'if [ ! -e {shlex.quote(str(trigger))} ] && '
+            'kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+        )
+        self.fixture.log_wait_only_after(trigger, wait_log)
+        result = self.fixture.run_entry(timeout=8)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(wait_log.exists())
+        self.assertIn("kill_signal_failed", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_still_live_after_kill_is_fatal_and_never_waited(self):
+        trigger = self.fixture.root / "runner-trigger"
+        wait_log = self.fixture.root / "wait-after-trigger"
+        self.fixture.install_slow_source_stat(
+            self.fixture.target / "application/bin/Launcher", trigger, delay=2
+        )
+        self.fixture.replace_stage(
+            'if ! kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+            f'if [ -e {shlex.quote(str(trigger))} ]; then :; '
+            'elif ! kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+        )
+        self.fixture.replace_stage(
+            'if kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+            f'if [ -e {shlex.quote(str(trigger))} ] || '
+            'kill -KILL "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+        )
+        self.fixture.log_wait_only_after(trigger, wait_log)
+        result = self.fixture.run_entry(timeout=8)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(wait_log.exists())
+        self.assertIn("child_survived_kill", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_uncertain_post_kill_state_is_fatal_and_never_waited(self):
+        trigger = self.fixture.root / "runner-trigger"
+        post_kill = self.fixture.root / "post-kill-trigger"
+        wait_log = self.fixture.root / "wait-after-trigger"
+        self.fixture.install_slow_source_stat(
+            self.fixture.target / "application/bin/Launcher", trigger, delay=2
+        )
+        self.fixture.install_process_override(post_kill, "unknown")
+        self.fixture.replace_stage(
+            'if ! kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+            f'if [ -e {shlex.quote(str(trigger))} ]; then :; '
+            'elif ! kill -TERM "$BOUNDED_CHILD_PID" 2>/dev/null; then',
+        )
+        self.fixture.replace_stage(
+            'LAST_BOUNDED_KILL_SENT=1\n                    poll_owned_child',
+            f'LAST_BOUNDED_KILL_SENT=1\n                    '
+            f'[ ! -e {shlex.quote(str(trigger))} ] || : > {shlex.quote(str(post_kill))}\n'
+            '                    poll_owned_child',
+        )
+        self.fixture.log_wait_only_after(trigger, wait_log)
+        result = self.fixture.run_entry(timeout=8)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(wait_log.exists())
+        self.assertIn("kill_state_uncertain", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_fatal_runner_starts_no_later_target_source(self):
+        trigger = self.fixture.root / "runner-trigger"
+        stat_log = self.fixture.root / "stat-log"
+        source = self.fixture.target / "application/bin/Launcher"
+        real_stat = self.fixture.move_command("stat")
+        self.fixture.write_command(
+            "stat",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys, time\n"
+            f"source = pathlib.Path({str(source)!r})\n"
+            f"trigger = pathlib.Path({str(trigger)!r})\n"
+            f"log = pathlib.Path({str(stat_log)!r})\n"
+            "with log.open('a') as stream: stream.write(sys.argv[-1] + '\\n')\n"
+            "if sys.argv[-1] == '/dev/fd/3' and not trigger.exists() and os.fstat(3).st_ino == source.stat().st_ino:\n"
+            "    trigger.touch()\n"
+            "    time.sleep(2)\n"
+            f"os.execv({str(real_stat)!r}, [{str(real_stat)!r}, *sys.argv[1:]])\n",
+        )
+        self.fixture.install_process_override(trigger, "unknown")
+        result = self.fixture.run_entry(timeout=8)
+        self.assertNotEqual(result.returncode, 0)
+        logged = stat_log.read_text()
+        self.assertNotIn(str(self.fixture.target / "application/appinfo.rc"), logged)
+        self.assert_no_complete()
+
+    def test_noninteractive_shell_exit_does_not_wait_for_background_child(self):
+        for shell in ("/bin/sh", shutil.which("dash")):
+            if not shell:
+                continue
+            with self.subTest(shell=shell):
+                started = subprocess.run(
+                    [shell, "-c", "sleep 2 </dev/null >/dev/null 2>&1 &"],
+                    timeout=1,
+                    check=False,
+                )
+                self.assertEqual(started.returncode, 0)
+
+    def _replace_source_after_open(self, source: Path, operation: str) -> None:
+        real_stat = self.fixture.move_command("stat")
+        trigger = self.fixture.root / f"replace-{source.name}"
+        other = self.fixture.target / "application/appinfo.rc"
+        if operation == "symlink":
+            mutation = (
+                "source.rename(source.with_name(source.name + '.old'))\n"
+                "        source.symlink_to(other)"
+            )
+        elif operation == "replace":
+            mutation = (
+                "source.rename(source.with_name(source.name + '.old'))\n"
+                "        source.write_bytes(b'replacement')"
+            )
+        elif operation == "delete":
+            mutation = "source.unlink()"
+        else:
+            raise AssertionError(operation)
+        self.fixture.write_command(
+            "stat",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys\n"
+            f"source = pathlib.Path({str(source)!r})\n"
+            f"other = pathlib.Path({str(other)!r})\n"
+            f"trigger = pathlib.Path({str(trigger)!r})\n"
+            "if sys.argv[-1] == '/dev/fd/3' and not trigger.exists():\n"
+            "    if source.exists() and os.fstat(3).st_ino == source.stat().st_ino:\n"
+            "        trigger.touch()\n"
+            f"        {mutation}\n"
+            f"os.execv({str(real_stat)!r}, [{str(real_stat)!r}, *sys.argv[1:]])\n",
+        )
+
+    def test_source_symlink_substitution_after_open_is_rejected(self):
+        self._replace_source_after_open(
+            self.fixture.target / "application/bin/Launcher", "symlink"
+        )
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_no_complete()
+
+    def test_source_same_path_replacement_after_open_is_rejected(self):
+        self._replace_source_after_open(
+            self.fixture.target / "application/bin/Launcher", "replace"
+        )
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("launcher:source_acquisition_23", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_source_deletion_after_open_is_rejected(self):
+        self._replace_source_after_open(
+            self.fixture.target / "application/bin/Launcher", "delete"
+        )
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_no_complete()
+
+    def test_mutable_etc_source_replacement_after_open_is_rejected(self):
+        self._replace_source_after_open(self.fixture.target / "etc/inittab", "replace")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("inittab:source_acquisition_23", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def _mutate_source_after_dd(self, mutation: str) -> None:
+        launcher = self.fixture.target / "application/bin/Launcher"
+        real_dd = self.fixture.move_command("dd")
+        trigger = self.fixture.root / "dd-trigger"
+        self.fixture.write_command(
+            "dd",
+            "#!/bin/sh\n"
+            f"{shlex.quote(str(real_dd))} \"$@\"\n"
+            "STATUS=$?\n"
+            f"if [ ! -e {shlex.quote(str(trigger))} ]; then\n"
+            f"  : > {shlex.quote(str(trigger))}\n"
+            f"  {mutation}\n"
+            "fi\n"
+            "exit \"$STATUS\"\n",
+        )
+
+    def test_source_growth_during_snapshot_is_rejected(self):
+        launcher = self.fixture.target / "application/bin/Launcher"
+        self._mutate_source_after_dd(f"printf x >> {shlex.quote(str(launcher))}")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("launcher:source_acquisition_29", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_source_shrink_during_snapshot_is_rejected(self):
+        launcher = self.fixture.target / "application/bin/Launcher"
+        self._mutate_source_after_dd(f": > {shlex.quote(str(launcher))}")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_no_complete()
+
+    def test_aggregate_source_limit_is_enforced_on_actual_snapshots(self):
+        launcher_size = (self.fixture.target / "application/bin/Launcher").stat().st_size
+        self.fixture.replace_stage(
+            "MAX_TOTAL_SOURCE_BYTES=8388608",
+            f"MAX_TOTAL_SOURCE_BYTES={launcher_size}",
+        )
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("appinfo:source_acquisition_26", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_hash_snapshot_per_file_cap_is_enforced(self):
+        path = self.fixture.target / "application/lib/libappframework.so.1.0.0"
+        path.write_bytes(b"x" * 1048577)
+        result = self.fixture.run_entry(timeout=20)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("libappframework:source_acquisition_25", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_success_removes_hash_scratch_and_reports_distinct_limits(self):
+        result = self.fixture.run_entry()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = self.fixture.outputs()[-1]
+        capabilities = (output / "CAPABILITIES.txt").read_text()
+        self.assertIn("capture_bytes.max=1048576", capabilities)
+        self.assertIn("transient_snapshot_bytes.max=2097152", capabilities)
+        self.assertIn("transient_usb_file_bytes.max=3145728", capabilities)
+        self.assertEqual(list(output.glob(".source-*.snapshot")), [])
+
+    def test_parseable_partial_hash_output_still_fails(self):
+        self.fixture.write_command(
+            "sha256sum",
+            "#!/bin/sh\n"
+            "printf '%064d  %s\\n' 0 \"$1\"\n"
+            "exit 1\n",
+        )
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("hash_failed_or_timed_out", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
+    def test_parseable_partial_stat_output_cannot_mask_failure(self):
+        real_stat = self.fixture.move_command("stat")
+        self.fixture.write_command(
+            "stat",
+            "#!/bin/sh\n"
+            "if [ \"$4\" = ./CAPABILITIES.txt ]; then printf '1\\n'; exit 1; fi\n"
+            f"exec {shlex.quote(str(real_stat))} \"$@\"\n",
+        )
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("capture_size_validation_failed", (self.fixture.outputs()[-1] / "ERRORS.txt").read_text())
+        self.assert_no_complete()
+
     def test_production_source_has_no_broad_or_sensitive_access(self):
         stage = (SOURCE_DIR / "stage2_platform_capture.sh").read_text()
         for forbidden in ("/dev/mtd", "/dev/mem", "/media/flash/nvm", "find ", "cp -r", "cp -R"):
@@ -427,6 +862,8 @@ class Stage2CaptureTests(unittest.TestCase):
         self.assertNotIn("W176_STAGE2_TEST", stage)
         self.assertNotIn("timeout -k", stage)
         self.assertEqual(stage.count('"$@" &'), 1)
+        self.assertNotIn("| awk", stage)
+        self.assertNotIn("wc -c", stage)
 
 
 if __name__ == "__main__":

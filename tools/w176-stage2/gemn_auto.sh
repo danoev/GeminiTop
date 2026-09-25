@@ -13,16 +13,21 @@ SCRIPT_DIR=$(cd -P "$(dirname "$0")" 2>/dev/null && pwd -P) || {
     printf '%s\n' "w176-stage2: USB root not found" >&2
     exit 1
 }
-GUARD="$SCRIPT_DIR/mount_guard.sh"
-STAGE2="$SCRIPT_DIR/stage2_platform_capture.sh"
-ARM_MARKER="$SCRIPT_DIR/ARM_STAGE2_PLATFORM_CAPTURE"
+cd -P "$SCRIPT_DIR" 2>/dev/null || {
+    printf '%s\n' "w176-stage2: cannot anchor USB root" >&2
+    exit 1
+}
+ANCHOR_DISPLAY=$(pwd -P 2>/dev/null) || exit 1
+GUARD=./mount_guard.sh
+STAGE2=./stage2_platform_capture.sh
+ARM_MARKER=./ARM_STAGE2_PLATFORM_CAPTURE
 
 if [ ! -f "$GUARD" ] || [ -L "$GUARD" ] || [ ! -f "$STAGE2" ] || [ -L "$STAGE2" ]; then
     printf '%s\n' "w176-stage2: payload scripts must be regular non-symlink files" >&2
     exit 1
 fi
-USB_ROOT=$(/bin/sh "$GUARD" "$SCRIPT_DIR") || exit 1
-[ "$USB_ROOT" = "$SCRIPT_DIR" ] || {
+USB_ROOT=$(/bin/sh "$GUARD" .) || exit 1
+[ "$USB_ROOT" = "$ANCHOR_DISPLAY" ] || {
     printf '%s\n' "w176-stage2: validated root mismatch" >&2
     exit 1
 }
@@ -31,4 +36,4 @@ if [ ! -f "$ARM_MARKER" ] || [ -L "$ARM_MARKER" ]; then
     exit 1
 fi
 
-exec /bin/sh "$STAGE2" "$USB_ROOT"
+exec /bin/sh "$STAGE2" .

@@ -47,20 +47,57 @@ later for host comparison remain reference evidence, not capture inputs.
 
 ## Limits and transaction model
 
-- Maximum bytes processed across whitelisted copied/hashed source files:
-  8,388,608.
+- Maximum actual source bytes read across whitelisted copied/hashed source
+  files: 8,388,608. The remaining aggregate allowance is passed into the same
+  bounded child that opens and snapshots each source.
 - Maximum copied payload bytes: 524,288.
-- Maximum complete output byte size, including manifests: 1,048,576.
-- Each source is checked as a regular non-symlink, measured through a bounded
-  child, checked against its own limit, then opened by a separately bounded
-  hash/copy child. Copies are re-measured and must match the measured source.
-- Missing, symlink, directory, oversized, changed-size, timed-out, or failed
-  mandatory inputs leave `status=INCOMPLETE` and no completion marker.
-- Every output is created under one positively identified removable FAT mount.
-  There is no internal fallback. Existing output directories are never reused.
+- Maximum final retained capture file bytes, including manifests: 1,048,576.
+- Maximum one-file transient source snapshot: 2,097,152 bytes.
+- Maximum transient USB file bytes: 3,145,728 (the final-retained bound plus
+  one maximum hash snapshot). Filesystem allocation metadata is not included.
+- Each mandatory source pathname is opened once inside one bounded child. The
+  child verifies that the open descriptor is a regular file, the pathname is
+  not a symlink, and pathname and descriptor device/inode metadata agree. It
+  records descriptor size/device/inode/mode/mtime/ctime, rejects per-file or
+  remaining-aggregate oversize, reads exactly that initial size through the
+  descriptor with bounded `dd` counts, verifies snapshot size, and requires
+  unchanged descriptor metadata and pathname identity afterwards. The source
+  pathname is never reopened for copy or hashing.
+- COPY items commit the verified USB snapshot. HASH items hash that snapshot
+  and remove it. This gives both actions the same acquisition boundary.
+- The installed live `/etc` files remain in the whitelist because their live
+  values answer the startup/USB-dispatch questions. They are not treated as
+  immutable; the same open-descriptor snapshot and before/after checks apply.
+- Missing, symlink, directory, identity-mismatched, oversized, changed,
+  timed-out, or failed mandatory inputs leave `status=INCOMPLETE` and no
+  completion marker.
+- Both invocation paths first enter the prospective USB directory, validate
+  that already-open directory as the exact removable FAT mount, and remain on
+  that filesystem. The capture creates and enters a fresh relative output
+  directory; every output open is relative to that anchored current working
+  directory. No later output write re-resolves the original mount pathname.
+  Detach/rebind after validation therefore continues on the original mounted
+  object or fails, never on the underlying RoadTop directory. Existing output
+  directories are never reused.
 - `STATUS.txt` starts incomplete. `ERRORS.txt`, `OPTIONAL.txt`, capabilities,
   summary, checksums, inventory, copied files, and README must be regular
   non-symlinks. `COMPLETE` is committed last only after status re-validation.
+
+## Bounded-runner failure semantics
+
+The runner retains the reviewed parent/child PID, parent PID, start-time, and
+`/proc/<pid>/stat` state checks. A child proven absent or exited is waited and
+reaped exactly once. UNKNOWN/REPLACED state, failed signalling, a child still
+live after KILL polling, or uncertain post-KILL state sets a fatal runner flag,
+performs no `wait`, begins no further target source read, best-effort finalises
+an incomplete USB status, and exits. A read-only child stuck in kernel
+uninterruptible I/O may remain until the kernel/device condition resolves;
+userspace cannot force it out. The Stage-2 parent deliberately does not block
+forever waiting for it and controls only its direct child, not a process group.
+
+Host tests verify that the available noninteractive `/bin/sh` and `dash` exit
+without waiting for an outstanding background child. That host observation is
+not a proof of every target-kernel failure mode.
 
 ## Deliberate arming
 

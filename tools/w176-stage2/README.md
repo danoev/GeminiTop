@@ -15,6 +15,15 @@ This entrypoint refuses to collect unless all of these conditions hold:
 3. payload scripts are regular non-symlinks; and
 4. a regular non-symlink `ARM_STAGE2_PLATFORM_CAPTURE` is deliberately present.
 
+Both the stock entrypoint and direct capture entry anchor their working
+directory inside the prospective USB filesystem before validation. The guard
+proves that this already-open directory is the exact removable FAT mount.
+Collection then creates and enters a fresh output directory and uses only
+relative output paths. If the original mount pathname is detached or rebound
+after validation, later writes therefore remain attached to the original
+filesystem object or fail; they cannot fall through to the underlying RoadTop
+directory.
+
 Only the differently named `.example` marker is tracked; its scope line is a
 human-readable review aid and is not opened by the target entrypoint. Do not
 create or rename the real marker
@@ -25,3 +34,9 @@ Valid output is a fresh `stage2-platform[-N]` directory with `STATUS.txt`
 showing `status=COMPLETE` and `mandatory_failures=0`, plus a regular non-symlink
 `COMPLETE` marker. The marker is committed last. Any mandatory failure leaves
 an incomplete directory and no completion marker.
+
+Each mandatory source is opened once inside the bounded child, checked through
+its open descriptor, and copied for exactly its approved size to a temporary
+USB snapshot. COPY items commit that snapshot; HASH items hash it and then
+remove it. Final retained capture bytes are capped at 1,048,576, one transient
+snapshot at 2,097,152, and total transient USB file bytes at 3,145,728.

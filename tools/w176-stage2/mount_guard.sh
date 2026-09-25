@@ -22,6 +22,7 @@ REQUESTED_ROOT=$1
 [ -n "$REQUESTED_ROOT" ] || fail "USB root is empty"
 [ -d "$REQUESTED_ROOT" ] || fail "USB root is not a directory"
 [ -r "$MOUNTS_FILE" ] || fail "mount table is unavailable"
+[ . -ef . ] 2>/dev/null || fail "shell lacks required anchored-identity test"
 
 for REQUIRED_COMMAND in awk dirname pwd sed; do
     command -v "$REQUIRED_COMMAND" >/dev/null 2>&1 || fail "missing command: $REQUIRED_COMMAND"
@@ -29,6 +30,8 @@ done
 
 CANONICAL_ROOT=$(cd -P "$REQUESTED_ROOT" 2>/dev/null && pwd -P) || fail "cannot canonicalize USB root"
 [ -n "$CANONICAL_ROOT" ] || fail "canonical USB root is empty"
+[ "$REQUESTED_ROOT" -ef "$CANONICAL_ROOT" ] 2>/dev/null ||
+    fail "anchored directory no longer matches its mount pathname"
 
 MOUNT_RECORDS=$(awk '$1 ~ /^\/dev\/sd[a-z]+[0-9]+$/ { print $1 "|" $2 "|" $3 }' "$MOUNTS_FILE") || fail "cannot read mount table"
 CANDIDATE_COUNT=0
@@ -77,5 +80,11 @@ case "$CANDIDATE_FSTYPE" in
     vfat|msdos|fat) ;;
     *) fail "filesystem $CANDIDATE_FSTYPE is not approved" ;;
 esac
+
+# This is the final validation operation. If the namespace path was rebound or
+# detached before validation completed, the open working directory and a fresh
+# lookup of the mount pathname no longer name the same filesystem object.
+[ . -ef "$CANDIDATE_MOUNT" ] 2>/dev/null ||
+    fail "validated mount pathname no longer names the anchored directory"
 
 printf '%s\n' "$CANONICAL_ROOT"
