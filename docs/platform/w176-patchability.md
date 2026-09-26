@@ -13,7 +13,7 @@ useful only insofar as it reduces the risk of that decision.
 
 | Route | Current evidence | State | Present decision |
 |---|---|---|---|
-| 1. USB runtime patch/injection | Stage-1 and Stage-2 prove that the stock root-run mdev action executes removable-root `gemn_auto.sh`. Installed ELF evidence proves ARM EABI5 hard-float with `/lib/ld-linux-armhf.so.3` and glibc 2.30. The Stage-3 inert binary is reproducibly built and statically audited, but has never run. | Shell autorun, installed ABI, and host static gate CONFIRMED; custom ARM physical loadability UNKNOWN | **Preferred route.** It is removable and avoids flash/NVM writes. The unarmed Stage-3 payload may proceed only to fresh independent safety review; no physical GO is declared. |
+| 1. USB runtime patch/injection | Stage-1 and Stage-2 prove that the stock root-run mdev action executes removable-root `gemn_auto.sh`. Installed ELF evidence proves ARM EABI5 hard-float with `/lib/ld-linux-armhf.so.3` and glibc 2.30. The inert binary is reproducibly built and statically audited, but has never run. The earlier mutable-snapshot Stage-3 wrapper is HIGH/NO-GO; its replacement uses a verified read-only USB execution window. | Shell autorun, installed ABI, host static gate, and disposable Linux FAT semantics CONFIRMED; installed BusyBox remount behavior and custom ARM physical loadability UNKNOWN | **Preferred route.** It is removable and avoids flash/NVM writes. The redesigned unarmed Stage-3 payload may proceed only to fresh independent safety review; no physical GO is declared. |
 | 2. Writable-storage/overlay patch | `/etc` and `/root` are tmpfs. The `/etc` overlay upper/work layers are volatile. NVM and userdata are persistent YAFFS2 mounts; installed init places `/media/flash/nvm/bin` and `/media/flash/nvm/lib` first in PATH and library search order. | Persistent path precedence CONFIRMED; safe override behavior UNKNOWN | Architecturally plausible, but persistent and higher risk. Do not write NVM/userdata or test binary/library shadowing until route 1 and recovery controls are established. |
 | 3. Modified application SquashFS | Installed `mtd11` is named `spapp.` and `/dev/blockrom11` is mounted read-only at `/tmp/sp/application`; Launcher is `/application/bin/Launcher`. The reference `spapp.` contains the application layer. | Installed facts CONFIRMED; mapping to the same reference image format is INFERENCE | Potentially narrower than a full image, but still a flash operation and currently blocked. It requires exact installed layout/update verification and proven recovery first. |
 | 4. Full firmware fork | Reference BINs can be statically unpacked. Existing legacy tooling can rebuild reference-style SquashFS regions and refresh uImage CRC/MD5 fields, but uses fixed historical layouts and has not been validated for the installed target. | REFERENCE ONLY / UNKNOWN | Highest-risk and last choice. Do not create or flash an installed-target image in this phase. |
@@ -51,6 +51,14 @@ builds of the 15-line inert C probe are identical, and static inspection shows
 only the installed-compatible loader, `libc.so.6`, and `GLIBC_2.4` boundary.
 The isolated payload remains deliberately unarmed and requires a fresh
 independent safety review before any one-shot physical test.
+
+The first Stage-3 wrapper revision was rejected after a confirmed HIGH
+hash-to-exec pathname race produced false COMPLETE in a host reproduction. The
+remediation removes the mutable snapshot and permits final hashing/execution
+only after the same validated USB device/mount is independently confirmed RO.
+Real disposable FAT tests support this normal-writer threat model, including
+fail-closed rejection when a writable descriptor prevents RO remount. Target
+BusyBox remount capability remains UNKNOWN and must fail closed.
 
 ## Firmware format and integrity
 

@@ -34,7 +34,7 @@ class Stage3Fixture:
             path.mkdir(parents=True, exist_ok=True)
         self._install_payload()
         self._install_commands()
-        self.set_stub(f"#!/bin/sh\nprintf '%s' {shlex.quote(EXPECTED_STDOUT)}\n")
+        self.set_success_stub()
         self.arm()
         self.set_mounts(("sda1", self.usb, "vfat", "1"))
 
@@ -56,7 +56,10 @@ class Stage3Fixture:
             "stage3_arm_probe.sh": {
                 "PATH=/usr/sbin:/usr/bin:/sbin:/bin": f"PATH={shlex.quote(str(self.bin))}",
                 "PROCESS_ROOT=/proc": f"PROCESS_ROOT={shlex.quote(str(self.proc / 'process'))}",
-                "FD_ROOT=/proc/self/fd": "FD_ROOT=/dev/fd",
+                "MOUNTS_FILE=/proc/mounts": f"MOUNTS_FILE={shlex.quote(str(self.proc / 'mounts'))}",
+                "SYS_BLOCK_ROOT=/sys/block": f"SYS_BLOCK_ROOT={shlex.quote(str(self.sys / 'block'))}",
+                "DEV_ROOT=/dev": f"DEV_ROOT={shlex.quote(str(self.dev))}",
+                "DEVICE_TEST=-b": "DEVICE_TEST=-e",
                 "COMMAND_POLL_INTERVAL=1": "COMMAND_POLL_INTERVAL=0.01",
                 "COMMAND_RUN_POLLS=5": "COMMAND_RUN_POLLS=20",
                 "COMMAND_TERM_POLLS=1": "COMMAND_TERM_POLLS=3",
@@ -152,12 +155,19 @@ class Stage3Fixture:
         self.write_command(
             "sha256sum",
             f"#!{sys.executable}\n"
-            "import hashlib, sys\n"
+            "import hashlib, pathlib, sys\n"
+            f"mounts = pathlib.Path({str(self.proc / 'mounts')!r})\n"
+            f"events = pathlib.Path({str(self.root / 'events')!r})\n"
             "for name in sys.argv[1:]:\n"
+            "    options = 'ABSENT'\n"
+            "    for line in mounts.read_text().splitlines():\n"
+            f"        fields = line.split(); options = fields[3] if len(fields) >= 4 and fields[1] == {str(self.usb.resolve())!r} else options\n"
+            "    with events.open('a') as stream: stream.write(f'hash:{options}\\n')\n"
             "    with open(name, 'rb') as stream:\n"
             "        digest = hashlib.sha256(stream.read()).hexdigest()\n"
             "    print(f'{digest}  {name}')\n",
         )
+        self.set_mount_behavior()
 
     def write_command(self, name: str, content: str) -> None:
         path = self.bin / name
@@ -168,6 +178,44 @@ class Stage3Fixture:
 
     def arm(self) -> None:
         (self.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").write_text("armed\n")
+
+    def set_mount_behavior(self, ro: str = "change", rw: str = "change") -> None:
+        behavior = self.root / "mount-behavior"
+        behavior.write_text(f"ro={ro}\nrw={rw}\n")
+        mounts = self.proc / "mounts"
+        events = self.root / "events"
+        self.write_command(
+            "mount",
+            f"#!{sys.executable}\n"
+            "import pathlib, sys\n"
+            f"behavior = pathlib.Path({str(behavior)!r})\n"
+            f"mounts = pathlib.Path({str(mounts)!r})\n"
+            f"events = pathlib.Path({str(events)!r})\n"
+            f"marker = pathlib.Path({str(self.usb / 'ARM_STAGE3_ARM_EXECUTION_PROBE')!r})\n"
+            "if len(sys.argv) != 5 or sys.argv[1] != '-o' or not sys.argv[2].startswith('remount,'):\n"
+            "    raise SystemExit(2)\n"
+            "state = sys.argv[2].split(',', 1)[1]\n"
+            "device, mountpoint = sys.argv[3], sys.argv[4]\n"
+            "if state == 'ro' and marker.exists(): raise SystemExit(3)\n"
+            "actions = dict(line.split('=', 1) for line in behavior.read_text().splitlines())\n"
+            "action = actions[state]\n"
+            "with events.open('a') as stream: stream.write(f'mount-request:{state}:{action}\\n')\n"
+            "if action == 'fail': raise SystemExit(1)\n"
+            "if action == 'false': raise SystemExit(0)\n"
+            "lines = []\n"
+            "for line in mounts.read_text().splitlines():\n"
+            "    fields = line.split()\n"
+            "    if len(fields) >= 4 and fields[0] == device and fields[1] == mountpoint:\n"
+            "        if action == 'remove': continue\n"
+            "        options = [item for item in fields[3].split(',') if item not in ('ro', 'rw')]\n"
+            "        fields[3] = ','.join([state, *options])\n"
+            "        if action == 'wrong-device': fields[0] = '/dev/sdb1'\n"
+            "        line = ' '.join(fields)\n"
+            "    lines.append(line)\n"
+            "mounts.write_text('\\n'.join(lines) + ('\\n' if lines else ''))\n"
+            "with events.open('a') as stream: stream.write(f'mount-state:{state}:{action}\\n')\n"
+            "if action == 'change-fail': raise SystemExit(1)\n",
+        )
 
     def set_stub(self, content: str) -> None:
         binary = self.usb / "arm_probe"
@@ -182,6 +230,14 @@ class Stage3Fixture:
         text = self._replace_assignment(text, "EXPECTED_BINARY_SHA256", digest)
         text = self._replace_assignment(text, "EXPECTED_BINARY_SIZE", str(size))
         stage.write_text(text)
+
+    def set_success_stub(self) -> None:
+        self.set_stub(
+            "#!/bin/sh\n"
+            f"options=$(awk -v mountpoint={shlex.quote(str(self.usb.resolve()))} '$2 == mountpoint {{ print $4 }}' {shlex.quote(str(self.proc / 'mounts'))})\n"
+            f"printf 'exec:%s\\n' \"$options\" >> {shlex.quote(str(self.root / 'events'))}\n"
+            "exit 0\n"
+        )
 
     @staticmethod
     def _replace_assignment(content: str, key: str, value: str) -> str:
@@ -207,7 +263,10 @@ class Stage3Fixture:
             removable = self.sys / "block" / disk / "removable"
             removable.parent.mkdir(parents=True, exist_ok=True)
             removable.write_text(removable_value + "\n")
-            lines.append(f"/dev/{device} {mount.resolve()} {filesystem} rw 0 0")
+            lines.append(
+                f"/dev/{device} {mount.resolve()} {filesystem} "
+                "rw,dirsync,nosuid,nodev,noatime,nodiratime 0 0"
+            )
         (self.proc / "mounts").write_text("\n".join(lines) + ("\n" if lines else ""))
 
     def run_entry(self, timeout: int = 10) -> subprocess.CompletedProcess[str]:
@@ -293,11 +352,25 @@ class Stage3Tests(unittest.TestCase):
         result = self.fixture.run_entry()
         self.assertEqual(result.returncode, 0, result.stderr)
         output = self.fixture.outputs()[-1]
-        self.assertEqual((output / "probe.stdout.txt").read_text(), EXPECTED_STDOUT)
-        self.assertEqual((output / "probe.stderr.txt").read_text(), "")
-        self.assertIn("probe.exit_status=0", (output / "execution.txt").read_text())
+        execution = (output / "execution.txt").read_text()
+        self.assertIn("executed=1", execution)
+        self.assertIn("exit_status=0", execution)
+        self.assertIn("result=PASS", execution)
         self.assertIn("status=COMPLETE", (output / "STATUS.txt").read_text())
         self.assertEqual((output / "COMPLETE").read_text(), "complete=1\n")
+        self.assertFalse((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").exists())
+        events = (self.fixture.root / "events").read_text().splitlines()
+        self.assertEqual(
+            events,
+            [
+                "mount-request:ro:change",
+                "mount-state:ro:change",
+                "hash:ro,dirsync,nosuid,nodev,noatime,nodiratime",
+                "exec:ro,dirsync,nosuid,nodev,noatime,nodiratime",
+                "mount-request:rw:change",
+                "mount-state:rw:change",
+            ],
+        )
 
     def test_unarmed_and_symlink_markers_are_rejected(self):
         marker = self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE"
@@ -351,8 +424,8 @@ class Stage3Tests(unittest.TestCase):
             f"os.execv({real_mkdir!r}, [{real_mkdir!r}, *sys.argv[1:]])\n",
         )
         result = self.fixture.run_entry()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue((anchored / "stage3-arm-probe/COMPLETE").is_file())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((anchored / "stage3-arm-probe/COMPLETE").exists())
         self.assertFalse((self.fixture.usb / "stage3-arm-probe").exists())
 
     def test_binary_absent_symlink_oversize_hash_and_mutation_fail(self):
@@ -379,14 +452,16 @@ class Stage3Tests(unittest.TestCase):
                     data[-1] ^= 1
                     binary.write_bytes(data)
                 self.assertNotEqual(self.fixture.run_entry().returncode, 0)
+                if operation == "same-size-mutation":
+                    events = (self.fixture.root / "events").read_text()
+                    self.assertIn("hash:ro,", events)
+                    self.assertNotIn("exec:", events)
+                    self.assertIn("mount-request:rw:change", events)
                 self.assert_no_complete()
 
-    def test_nonzero_stderr_malformed_missing_pass_and_exec_failure_fail(self):
+    def test_nonzero_and_exec_failure_fail(self):
         stubs = (
             "#!/bin/sh\nexit 7\n",
-            f"#!/bin/sh\nprintf '%s' {shlex.quote(EXPECTED_STDOUT)}\nprintf error >&2\n",
-            "#!/bin/sh\nprintf 'schema=1\\nresult=MALFORMED\\n'\n",
-            "#!/bin/sh\nprintf 'schema=1\\nstarted=1\\n'\n",
             "not an executable format\n",
         )
         for stub in stubs:
@@ -422,27 +497,86 @@ class Stage3Tests(unittest.TestCase):
                 self.fixture.install_process_override(trigger, mode)
                 self.assertNotEqual(self.fixture.run_entry(timeout=8).returncode, 0)
                 output = self.fixture.outputs()[-1]
-                self.assertIn("runner_fatal", (output / "ERRORS.txt").read_text())
+                self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+                self.assertIn(" ro,", (self.fixture.proc / "mounts").read_text())
                 self.assert_no_complete()
 
-    def test_binary_path_replacement_after_hash_is_rejected(self):
-        binary = self.fixture.usb / "arm_probe"
-        real_hash = self.fixture.bin / "sha256sum.real"
-        (self.fixture.bin / "sha256sum").rename(real_hash)
-        self.fixture.write_command(
-            "sha256sum",
-            "#!/bin/sh\n"
-            f"{shlex.quote(str(real_hash))} \"$@\"\n"
-            "status=$?\n"
-            f"if [ ! -e {shlex.quote(str(self.fixture.root / 'changed'))} ]; then\n"
-            f"  : > {shlex.quote(str(self.fixture.root / 'changed'))}\n"
-            f"  mv {shlex.quote(str(binary))} {shlex.quote(str(binary) + '.old')}\n"
-            f"  cp {shlex.quote(str(binary) + '.old')} {shlex.quote(str(binary))}\n"
-            "fi\n"
-            "exit \"$status\"\n",
-        )
+    def test_marker_is_consumed_and_reinvoke_cannot_execute(self):
+        first = self.fixture.run_entry()
+        self.assertEqual(first.returncode, 0, first.stderr)
+        self.assertFalse((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").exists())
+        output_count = len(self.fixture.outputs())
+        second = self.fixture.run_entry()
+        self.assertNotEqual(second.returncode, 0)
+        self.assertEqual(len(self.fixture.outputs()), output_count)
+
+    def test_ro_remount_failures_and_false_success_do_not_execute(self):
+        for action in ("fail", "false", "change-fail"):
+            with self.subTest(action=action):
+                self.fixture.cleanup()
+                self.fixture = Stage3Fixture()
+                self.fixture.set_mount_behavior(ro=action)
+                result = self.fixture.run_entry()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").exists())
+                events = (self.fixture.root / "events").read_text()
+                self.assertNotIn("exec:", events)
+                self.assert_no_complete()
+
+    def test_missing_mount_command_fails_before_marker_consumption(self):
+        (self.fixture.bin / "mount").unlink()
         result = self.fixture.run_entry()
         self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").is_file())
+        self.assert_no_complete()
+
+    def test_initial_mount_options_must_be_rw_dirsync_and_executable(self):
+        for name, replacement in (
+            ("missing-dirsync", "rw"),
+            ("noexec", "rw,dirsync,noexec"),
+            ("initial-ro", "ro,dirsync"),
+        ):
+            with self.subTest(options=name):
+                self.fixture.cleanup()
+                self.fixture = Stage3Fixture()
+                mounts = self.fixture.proc / "mounts"
+                current = mounts.read_text()
+                current = current.replace("rw,dirsync", replacement)
+                mounts.write_text(current)
+                self.assertNotEqual(self.fixture.run_entry().returncode, 0)
+                self.assertTrue((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").is_file())
+                self.assert_no_complete()
+
+    def test_mount_identity_change_and_usb_removal_are_fatal(self):
+        for action in ("wrong-device", "remove"):
+            with self.subTest(action=action):
+                self.fixture.cleanup()
+                self.fixture = Stage3Fixture()
+                self.fixture.set_mount_behavior(ro=action)
+                result = self.fixture.run_entry()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertNotIn("exec:", (self.fixture.root / "events").read_text())
+                self.assert_no_complete()
+
+    def test_rw_restore_failure_leaves_initial_incomplete_only(self):
+        for action in ("fail", "false"):
+            with self.subTest(action=action):
+                self.fixture.cleanup()
+                self.fixture = Stage3Fixture()
+                self.fixture.set_mount_behavior(rw=action)
+                result = self.fixture.run_entry()
+                self.assertNotEqual(result.returncode, 0)
+                output = self.fixture.outputs()[-1]
+                self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+                self.assertFalse((output / "execution.txt").exists())
+                self.assert_no_complete()
+
+    def test_rw_command_failure_after_actual_restore_is_incomplete(self):
+        self.fixture.set_mount_behavior(rw="change-fail")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        output = self.fixture.outputs()[-1]
+        self.assertIn("usb_rw_remount_command_failed", (output / "ERRORS.txt").read_text())
         self.assert_no_complete()
 
     def test_output_and_complete_commit_failures_have_no_false_success(self):
@@ -479,6 +613,11 @@ class Stage3Tests(unittest.TestCase):
         self.assertLessEqual(len(source.splitlines()), 100)
         self.assertFalse((PAYLOAD_DIR / "ARM_STAGE3_ARM_EXECUTION_PROBE").exists())
         self.assertEqual(stage.count('"$@" &'), 1)
+        self.assertNotIn(".arm_probe.exec", stage)
+        self.assertNotIn("probe.stdout.txt", stage)
+        self.assertNotIn("probe.stderr.txt", stage)
+        self.assertEqual(stage.count('-o remount,ro "$USB_DEVICE" "$ANCHOR_DISPLAY"'), 1)
+        self.assertEqual(stage.count('-o remount,rw "$USB_DEVICE" "$ANCHOR_DISPLAY"'), 1)
 
 
 if __name__ == "__main__":

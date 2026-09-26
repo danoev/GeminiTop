@@ -7,7 +7,10 @@ IFS=$(printf '\040\011\012x')
 IFS=${IFS%x}
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 PROCESS_ROOT=/proc
-FD_ROOT=/proc/self/fd
+MOUNTS_FILE=/proc/mounts
+SYS_BLOCK_ROOT=/sys/block
+DEV_ROOT=/dev
+DEVICE_TEST=-b
 COMMAND_POLL_INTERVAL=1
 COMMAND_RUN_POLLS=5
 COMMAND_TERM_POLLS=1
@@ -115,7 +118,7 @@ finish_incomplete() {
 write_status INCOMPLETE || exit 1
 
 MISSING_COMMAND=0
-for REQUIRED_COMMAND in awk chmod cmp dd mkdir mv rm sha256sum sleep stat; do
+for REQUIRED_COMMAND in awk mkdir mount mv rm sed sha256sum sleep stat; do
     command -v "$REQUIRED_COMMAND" >/dev/null 2>&1 || {
         record_failure "missing_command:$REQUIRED_COMMAND"
         MISSING_COMMAND=1
@@ -130,6 +133,88 @@ done
 [ -x /bin/sh ] || { record_failure "missing_shell:/bin/sh"; MISSING_COMMAND=1; }
 [ . -ef . ] 2>/dev/null || { record_failure "missing_shell_primitive:file_identity"; MISSING_COMMAND=1; }
 [ "$MISSING_COMMAND" -eq 0 ] || finish_incomplete
+
+MOUNT_COMMAND=$(command -v mount 2>/dev/null) || {
+    record_failure "mount_command_unavailable"
+    finish_incomplete
+}
+case "$MOUNT_COMMAND" in
+    /*) ;;
+    *) record_failure "mount_command_not_absolute"; finish_incomplete ;;
+esac
+case "$MOUNT_COMMAND" in
+    "$ANCHOR_DISPLAY"|"$ANCHOR_DISPLAY"/*)
+        record_failure "mount_command_on_usb"
+        finish_incomplete
+        ;;
+esac
+
+read_anchored_mount_record() {
+    MOUNT_RECORD=$(awk -v mountpoint="$ANCHOR_DISPLAY" '
+        $2 == mountpoint { count++; record=$1 "|" $2 "|" $3 "|" $4 }
+        END { if (count == 1) print record; else exit 1 }
+    ' "$MOUNTS_FILE" 2>/dev/null) || return 1
+    OLD_IFS=$IFS
+    IFS='|'
+    set -- $MOUNT_RECORD
+    IFS=$OLD_IFS
+    [ "$#" -eq 4 ] || return 1
+    CURRENT_DEVICE=$1
+    CURRENT_MOUNT=$2
+    CURRENT_FSTYPE=$3
+    CURRENT_OPTIONS=$4
+    [ "$CURRENT_MOUNT" = "$ANCHOR_DISPLAY" ]
+}
+
+validate_initial_mount_record() {
+    read_anchored_mount_record || return 1
+    case "$CURRENT_DEVICE" in /dev/sd[a-z]*[0-9]) ;; *) return 1 ;; esac
+    DEVICE_NAME=${CURRENT_DEVICE#/dev/}
+    DISK_NAME=$(printf '%s\n' "$DEVICE_NAME" | sed 's/[0-9][0-9]*$//')
+    PARTITION=${DEVICE_NAME#"$DISK_NAME"}
+    case "$DISK_NAME" in sd[a-z]*) ;; *) return 1 ;; esac
+    case "$PARTITION" in ''|*[!0-9]*) return 1 ;; esac
+    [ -r "$SYS_BLOCK_ROOT/$DISK_NAME/removable" ] || return 1
+    REMOVABLE=$(awk 'NR == 1 { print $1; exit }' "$SYS_BLOCK_ROOT/$DISK_NAME/removable" 2>/dev/null) || return 1
+    [ "$REMOVABLE" = 1 ] || return 1
+    if [ "$DEVICE_TEST" = -b ]; then
+        [ -b "$DEV_ROOT/$DEVICE_NAME" ] || return 1
+    else
+        [ -e "$DEV_ROOT/$DEVICE_NAME" ] || return 1
+    fi
+    case "$CURRENT_FSTYPE" in vfat|msdos|fat) ;; *) return 1 ;; esac
+    case ",$CURRENT_OPTIONS," in *,rw,*) ;; *) return 1 ;; esac
+    case ",$CURRENT_OPTIONS," in *,ro,*|*,noexec,*) return 1 ;; esac
+    case ",$CURRENT_OPTIONS," in *,dirsync,*) ;; *) return 1 ;; esac
+    USB_DEVICE=$CURRENT_DEVICE
+    USB_FSTYPE=$CURRENT_FSTYPE
+    INITIAL_MOUNT_OPTIONS=$CURRENT_OPTIONS
+}
+
+verify_mount_state() {
+    EXPECTED_MOUNT_STATE=$1
+    read_anchored_mount_record || return 1
+    [ "$CURRENT_DEVICE" = "$USB_DEVICE" ] || return 1
+    [ "$CURRENT_FSTYPE" = "$USB_FSTYPE" ] || return 1
+    [ .. -ef "$ANCHOR_DISPLAY" ] 2>/dev/null || return 1
+    case ",$CURRENT_OPTIONS," in *,noexec,*) return 1 ;; esac
+    case "$EXPECTED_MOUNT_STATE" in
+        ro)
+            case ",$CURRENT_OPTIONS," in *,ro,*) ;; *) return 1 ;; esac
+            case ",$CURRENT_OPTIONS," in *,rw,*) return 1 ;; esac
+            ;;
+        rw)
+            case ",$CURRENT_OPTIONS," in *,rw,*) ;; *) return 1 ;; esac
+            case ",$CURRENT_OPTIONS," in *,ro,*) return 1 ;; esac
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+validate_initial_mount_record || {
+    record_failure "initial_mount_identity_or_options_invalid"
+    finish_incomplete
+}
 
 read_current_process_id() {
     CURRENT_PROCESS_STAT=
@@ -285,109 +370,158 @@ then
     finish_incomplete
 fi
 
-abort_after_runner_fatal() {
-    record_failure "runner_fatal:$LAST_BOUNDED_DETAIL"
-    finish_incomplete
+leave_readonly_incomplete() {
+    printf '%s\n' \
+        "w176-stage3: USB remains read-only or unavailable; physical removal is the recovery action" >&2
+    printf '%s\n' "w176-stage3: execution proof incomplete: $OUT_DISPLAY" >&2
+    exit 1
 }
 
 BINARY=../arm_probe
-if [ ! -f "$BINARY" ] || [ -L "$BINARY" ]; then
+ARM_MARKER=../ARM_STAGE3_ARM_EXECUTION_PROBE
+if [ ! -f "$BINARY" ] || [ -L "$BINARY" ] || [ ! -x "$BINARY" ]; then
     record_failure "binary_absent_or_invalid"
     finish_incomplete
 fi
-exec 3< "$BINARY" || { record_failure "binary_open_failed"; finish_incomplete; }
-[ -f "$FD_ROOT/3" ] || { record_failure "binary_fd_not_regular"; finish_incomplete; }
-BINARY_META_BEFORE=$(stat -L -c '%d|%i|%f|%s|%Y|%Z' "$FD_ROOT/3" 2>/dev/null) || { record_failure "binary_stat_failed"; finish_incomplete; }
-PATH_ID_BEFORE=$(stat -L -c '%d|%i' "$BINARY" 2>/dev/null) || { record_failure "binary_path_stat_failed"; finish_incomplete; }
-case "$BINARY_META_BEFORE" in "$PATH_ID_BEFORE|"*) ;; *) record_failure "binary_identity_mismatch"; finish_incomplete ;; esac
-OLD_IFS=$IFS
-IFS='|'
-set -- $BINARY_META_BEFORE
-IFS=$OLD_IFS
-[ "$#" -eq 6 ] || { record_failure "binary_metadata_invalid"; finish_incomplete; }
-BINARY_SIZE=$4
-case "$BINARY_SIZE" in ''|*[!0-9]*) record_failure "binary_size_invalid"; finish_incomplete ;; esac
-[ "$BINARY_SIZE" -le "$MAX_BINARY_SIZE" ] || { record_failure "binary_oversized"; finish_incomplete; }
-[ "$BINARY_SIZE" -eq "$EXPECTED_BINARY_SIZE" ] || { record_failure "binary_size_mismatch"; finish_incomplete; }
+PRELIMINARY_BINARY_SIZE=$(stat -L -c '%s' "$BINARY" 2>/dev/null) || {
+    record_failure "binary_preliminary_stat_failed"
+    finish_incomplete
+}
+case "$PRELIMINARY_BINARY_SIZE" in ''|*[!0-9]*) record_failure "binary_size_invalid"; finish_incomplete ;; esac
+[ "$PRELIMINARY_BINARY_SIZE" -le "$MAX_BINARY_SIZE" ] || { record_failure "binary_oversized"; finish_incomplete; }
 
-EXEC_BINARY=./.arm_probe.exec
-SNAPSHOT_STATUS=0
-run_bounded /bin/sh -c '
-    umask 077
-    dd if="$1" of="$2" bs=65536 count=1 2>/dev/null || exit 1
-    chmod 700 "$2" || exit 1
-' sh "$FD_ROOT/3" "$EXEC_BINARY" >/dev/null 2>&1 || SNAPSHOT_STATUS=$?
-if [ "$SNAPSHOT_STATUS" -eq 125 ] && [ "$RUNNER_FATAL" -ne 0 ]; then abort_after_runner_fatal; fi
-[ "$SNAPSHOT_STATUS" -eq 0 ] && is_regular_nonsymlink "$EXEC_BINARY" || { record_failure "binary_snapshot_failed"; finish_incomplete; }
-EXEC_BINARY_SIZE=$(stat -L -c '%s' "$EXEC_BINARY" 2>/dev/null) || { record_failure "binary_snapshot_stat_failed"; finish_incomplete; }
-[ "$EXEC_BINARY_SIZE" = "$EXPECTED_BINARY_SIZE" ] || { record_failure "binary_snapshot_size_mismatch"; finish_incomplete; }
-SNAPSHOT_HASH_TEMP=./.snapshot-hash.tmp
-SNAPSHOT_HASH_STATUS=0
-run_bounded sha256sum "$EXEC_BINARY" > "$SNAPSHOT_HASH_TEMP" 2>/dev/null || SNAPSHOT_HASH_STATUS=$?
-if [ "$SNAPSHOT_HASH_STATUS" -eq 125 ] && [ "$RUNNER_FATAL" -ne 0 ]; then abort_after_runner_fatal; fi
-[ "$SNAPSHOT_HASH_STATUS" -eq 0 ] && is_regular_nonsymlink "$SNAPSHOT_HASH_TEMP" || { record_failure "binary_snapshot_hash_failed"; finish_incomplete; }
-SNAPSHOT_SHA256=$(awk 'NR == 1 && $1 ~ /^[0-9a-fA-F]+$/ && length($1) == 64 { value=tolower($1) } NR > 1 { bad=1 } END { if (!bad) print value }' "$SNAPSHOT_HASH_TEMP")
-rm -f "$SNAPSHOT_HASH_TEMP" || { record_failure "binary_snapshot_hash_cleanup_failed"; finish_incomplete; }
-[ "$SNAPSHOT_SHA256" = "$EXPECTED_BINARY_SHA256" ] || { record_failure "binary_snapshot_hash_mismatch"; finish_incomplete; }
-BINARY_SHA256=$SNAPSHOT_SHA256
+if [ ! -f "$ARM_MARKER" ] || [ -L "$ARM_MARKER" ]; then
+    record_failure "arming_marker_absent_or_invalid"
+    finish_incomplete
+fi
+rm -f "$ARM_MARKER" || { record_failure "arming_marker_consume_failed"; finish_incomplete; }
+if [ -e "$ARM_MARKER" ] || [ -L "$ARM_MARKER" ]; then
+    record_failure "arming_marker_still_present"
+    finish_incomplete
+fi
+
+RO_REMOUNT_STATUS=0
+run_bounded "$MOUNT_COMMAND" -o remount,ro "$USB_DEVICE" "$ANCHOR_DISPLAY" >/dev/null 2>&1 || RO_REMOUNT_STATUS=$?
+if [ "$RO_REMOUNT_STATUS" -eq 125 ] && [ "$RUNNER_FATAL" -ne 0 ]; then
+    leave_readonly_incomplete
+fi
+if ! verify_mount_state ro; then
+    if verify_mount_state rw; then
+        record_failure "usb_ro_remount_not_established:$RO_REMOUNT_STATUS"
+        finish_incomplete
+    fi
+    leave_readonly_incomplete
+fi
+
+DEFERRED_ERROR=
+if [ "$RO_REMOUNT_STATUS" -ne 0 ]; then
+    DEFERRED_ERROR="usb_ro_remount_command_failed:$RO_REMOUNT_STATUS"
+fi
+BINARY_SHA256=
+EXEC_STATUS=125
+EXECUTION_ATTEMPTED=0
+
+if [ -z "$DEFERRED_ERROR" ] &&
+    { [ ! -f "$BINARY" ] || [ -L "$BINARY" ] || [ ! -x "$BINARY" ]; }
+then
+    DEFERRED_ERROR=binary_invalid_after_ro
+fi
+if [ -z "$DEFERRED_ERROR" ]; then
+    BINARY_SIZE=$(stat -L -c '%s' "$BINARY" 2>/dev/null) || DEFERRED_ERROR=binary_stat_failed_after_ro
+fi
+if [ -z "$DEFERRED_ERROR" ]; then
+    case "$BINARY_SIZE" in ''|*[!0-9]*) DEFERRED_ERROR=binary_size_invalid_after_ro ;; esac
+fi
+if [ -z "$DEFERRED_ERROR" ] && [ "$BINARY_SIZE" -gt "$MAX_BINARY_SIZE" ]; then
+    DEFERRED_ERROR=binary_oversized_after_ro
+fi
+if [ -z "$DEFERRED_ERROR" ] && [ "$BINARY_SIZE" -ne "$EXPECTED_BINARY_SIZE" ]; then
+    DEFERRED_ERROR=binary_size_mismatch_after_ro
+fi
+if [ -z "$DEFERRED_ERROR" ]; then
+    HASH_OUTPUT=$(sha256sum "$BINARY" 2>/dev/null) || DEFERRED_ERROR=binary_hash_failed_after_ro
+fi
+if [ -z "$DEFERRED_ERROR" ]; then
+    case "$HASH_OUTPUT" in *'
+'*) DEFERRED_ERROR=binary_hash_output_invalid ;; esac
+fi
+if [ -z "$DEFERRED_ERROR" ]; then
+    set -- $HASH_OUTPUT
+    if [ "$#" -ne 2 ] || [ "$2" != "$BINARY" ]; then
+        DEFERRED_ERROR=binary_hash_output_invalid
+    else
+        BINARY_SHA256=$1
+    fi
+fi
+if [ -z "$DEFERRED_ERROR" ] && [ "$BINARY_SHA256" != "$EXPECTED_BINARY_SHA256" ]; then
+    DEFERRED_ERROR=binary_hash_mismatch_after_ro
+fi
+
+if [ -z "$DEFERRED_ERROR" ]; then
+    EXECUTION_ATTEMPTED=1
+    EXEC_STATUS=0
+    run_bounded "$BINARY" >/dev/null 2>&1 || EXEC_STATUS=$?
+    if [ "$EXEC_STATUS" -eq 125 ] && [ "$RUNNER_FATAL" -ne 0 ]; then
+        leave_readonly_incomplete
+    fi
+    if [ "$EXEC_STATUS" -ne 0 ]; then
+        DEFERRED_ERROR="probe_exit_status:$EXEC_STATUS:$LAST_BOUNDED_DETAIL"
+    fi
+fi
+
+RW_REMOUNT_STATUS=0
+run_bounded "$MOUNT_COMMAND" -o remount,rw "$USB_DEVICE" "$ANCHOR_DISPLAY" >/dev/null 2>&1 || RW_REMOUNT_STATUS=$?
+if [ "$RW_REMOUNT_STATUS" -eq 125 ] && [ "$RUNNER_FATAL" -ne 0 ]; then
+    leave_readonly_incomplete
+fi
+verify_mount_state rw || leave_readonly_incomplete
+if [ "$RW_REMOUNT_STATUS" -ne 0 ]; then
+    record_failure "usb_rw_remount_command_failed:$RW_REMOUNT_STATUS"
+    finish_incomplete
+fi
+
+if [ -n "$DEFERRED_ERROR" ]; then
+    record_failure "$DEFERRED_ERROR"
+    finish_incomplete
+fi
+[ "$EXECUTION_ATTEMPTED" -eq 1 ] && [ "$EXEC_STATUS" -eq 0 ] || {
+    record_failure "probe_execution_not_proven"
+    finish_incomplete
+}
+
 printf '%s  %s\n' "$BINARY_SHA256" arm_probe > ./.binary.sha256.tmp || finish_incomplete
 commit_regular_file ./.binary.sha256.tmp ./binary.sha256 || finish_incomplete
-EXEC_BINARY_META_BEFORE=$(stat -L -c '%d|%i|%f|%s|%Y|%Z' "$EXEC_BINARY" 2>/dev/null) || { record_failure "binary_snapshot_metadata_failed"; finish_incomplete; }
 
 CAPABILITIES_TEMP=./.CAPABILITIES.txt.tmp
 printf '%s\n' \
     "schema=1" \
     "hard_timeout.backend=parent_proc_state_machine" \
     "hard_timeout.selftest=PASS" \
-    "binary.execution=verified_fd_snapshot" \
-    "binary.bytes.max=$MAX_BINARY_SIZE" > "$CAPABILITIES_TEMP" || finish_incomplete
+    "binary.execution=readonly_usb_path" \
+    "binary.bytes.max=$MAX_BINARY_SIZE" \
+    "usb.device=$USB_DEVICE" \
+    "usb.filesystem=$USB_FSTYPE" \
+    "usb.initial_options=$INITIAL_MOUNT_OPTIONS" \
+    "usb.readonly_window.verified=PASS" \
+    "usb.readwrite_restore.verified=PASS" \
+    "arming_marker.consumed=PASS" > "$CAPABILITIES_TEMP" || finish_incomplete
 commit_regular_file "$CAPABILITIES_TEMP" ./CAPABILITIES.txt || finish_incomplete
-
-STDOUT_FILE=./probe.stdout.txt
-STDERR_FILE=./probe.stderr.txt
-: > "$STDOUT_FILE" || { record_failure "stdout_create_failed"; finish_incomplete; }
-: > "$STDERR_FILE" || { record_failure "stderr_create_failed"; finish_incomplete; }
-is_regular_nonsymlink "$STDOUT_FILE" && is_regular_nonsymlink "$STDERR_FILE" || { record_failure "capture_files_invalid"; finish_incomplete; }
-
-EXEC_STATUS=0
-run_bounded "$EXEC_BINARY" > "$STDOUT_FILE" 2> "$STDERR_FILE" || EXEC_STATUS=$?
-if [ "$EXEC_STATUS" -eq 125 ] && [ "$RUNNER_FATAL" -ne 0 ]; then abort_after_runner_fatal; fi
-[ "$EXEC_STATUS" -eq 0 ] || { record_failure "probe_exit_status:$EXEC_STATUS:$LAST_BOUNDED_DETAIL"; finish_incomplete; }
-
-BINARY_META_AFTER=$(stat -L -c '%d|%i|%f|%s|%Y|%Z' "$FD_ROOT/3" 2>/dev/null) || { record_failure "binary_post_stat_failed"; finish_incomplete; }
-PATH_ID_AFTER=$(stat -L -c '%d|%i' "$BINARY" 2>/dev/null) || { record_failure "binary_post_path_stat_failed"; finish_incomplete; }
-[ "$BINARY_META_AFTER" = "$BINARY_META_BEFORE" ] || { record_failure "binary_changed_during_execution"; finish_incomplete; }
-case "$BINARY_META_AFTER" in "$PATH_ID_AFTER|"*) ;; *) record_failure "binary_path_changed_during_execution"; finish_incomplete ;; esac
-EXEC_BINARY_META_AFTER=$(stat -L -c '%d|%i|%f|%s|%Y|%Z' "$EXEC_BINARY" 2>/dev/null) || { record_failure "binary_snapshot_post_stat_failed"; finish_incomplete; }
-[ "$EXEC_BINARY_META_AFTER" = "$EXEC_BINARY_META_BEFORE" ] || { record_failure "binary_snapshot_changed_during_execution"; finish_incomplete; }
-exec 3<&-
-
-EXPECTED_STDOUT=./.expected.stdout
-printf '%s\n' \
-    "schema=1" \
-    "probe=w176-arm-loadability" \
-    "started=1" \
-    "result=PASS" > "$EXPECTED_STDOUT" || finish_incomplete
-cmp -s "$EXPECTED_STDOUT" "$STDOUT_FILE" || { record_failure "probe_stdout_invalid"; finish_incomplete; }
-rm -f "$EXPECTED_STDOUT" || { record_failure "expected_output_cleanup_failed"; finish_incomplete; }
-[ ! -s "$STDERR_FILE" ] || { record_failure "probe_stderr_not_empty"; finish_incomplete; }
-rm -f "$EXEC_BINARY" || { record_failure "binary_snapshot_cleanup_failed"; finish_incomplete; }
 
 EXECUTION_TEMP=./.execution.txt.tmp
 printf '%s\n' \
     "schema=1" \
-    "probe.started=1" \
-    "probe.exit_status=0" \
-    "probe.binary.sha256=$BINARY_SHA256" \
-    "probe.stdout.valid=1" \
-    "probe.stderr.empty=1" > "$EXECUTION_TEMP" || finish_incomplete
+    "probe=w176-arm-loadability" \
+    "binary_sha256=$BINARY_SHA256" \
+    "executed=1" \
+    "exit_status=0" \
+    "result=PASS" > "$EXECUTION_TEMP" || finish_incomplete
 commit_regular_file "$EXECUTION_TEMP" ./execution.txt || finish_incomplete
 
 README_TEMP=./.README.txt.tmp
 printf '%s\n' \
     "W176 Stage-3 inert ARMHF loadability probe finished." \
-    "Require STATUS.txt status=COMPLETE, mandatory_failures=0, execution.txt, strict PASS stdout, and COMPLETE." \
-    "All wrapper output was written relative to an anchored validated removable USB filesystem." > "$README_TEMP" || finish_incomplete
+    "The exact binary was finally hashed and executed only while the validated USB filesystem was confirmed read-only." \
+    "Require STATUS.txt COMPLETE with zero failures, execution.txt PASS, the frozen binary hash, and COMPLETE." > "$README_TEMP" || finish_incomplete
 commit_regular_file "$README_TEMP" ./README.txt || finish_incomplete
 
 [ "$FAILURES" -eq 0 ] && [ "$REQUIRED_WRITE_FAILED" -eq 0 ] || finish_incomplete
@@ -399,7 +533,7 @@ status_is_complete() {
     is_regular_nonsymlink "$STATUS_FILE" || return 1
     awk -F= '$1 == "status" { status=$2; sc++ } $1 == "mandatory_failures" { failures=$2; fc++ } END { if (sc != 1 || fc != 1 || status != "COMPLETE" || failures != "0") exit 1 }' "$STATUS_FILE"
 }
-for REQUIRED_OUTPUT in STATUS.txt ERRORS.txt CAPABILITIES.txt binary.sha256 probe.stdout.txt probe.stderr.txt execution.txt README.txt; do
+for REQUIRED_OUTPUT in STATUS.txt ERRORS.txt CAPABILITIES.txt binary.sha256 execution.txt README.txt; do
     is_regular_nonsymlink "./$REQUIRED_OUTPUT" || finish_incomplete
 done
 status_is_complete || finish_incomplete

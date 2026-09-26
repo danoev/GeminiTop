@@ -28,6 +28,10 @@ maintained in `docs/platform/w176-patchability.md`.
   A-profile 9.2-2019.12 AArch64-Linux-hosted toolchain and pinned Linux/arm64
   container; two clean builds of the inert custom ELF are byte-identical and
   the static ABI/import/source gate passes. The ARM ELF has not run.
+- CONFIRMED: the first Stage-3 mutable-snapshot wrapper was HIGH/NO-GO after a
+  host race produced false COMPLETE. Its read-only-window replacement passes
+  disposable Linux FAT semantics and host-stub adversarial tests. Installed
+  BusyBox remount behavior and physical custom-ELF loadability remain UNKNOWN.
 - REFERENCE ONLY: the Benz v2.0.65 archive contains a Gemini container, a
   validated Linux 4.9.217 uImage, and SquashFS images. Separately, the original
   Audi reconnaissance capture showed a Gemini/ARMv7 runtime and stock
@@ -67,8 +71,9 @@ is authorized in this phase.
 
 ## Still blocked after the host-only Stage-3 build
 
-- using the unarmed Stage-3 payload physically until a fresh independent safety
-  review verifies the exact frozen commit, binary SHA-256, wrapper, and tests;
+- using the redesigned unarmed Stage-3 payload physically until a fresh
+  independent safety review verifies the exact frozen commit, binary SHA-256,
+  RO/RW mount-state transition, one-shot marker, wrapper, and tests;
 - approving rendering solely from dimensions and 32-bpp metadata;
 - treating a matching partition name/size as firmware byte compatibility;
 - identifying the unit as QD507 (or any other marketing board identifier);

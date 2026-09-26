@@ -32,11 +32,30 @@ The isolated payload exists only to support a fresh independent review. It is
 unarmed: Git contains `ARM_STAGE3_ARM_EXECUTION_PROBE.example`, not the real
 `ARM_STAGE3_ARM_EXECUTION_PROBE` marker.
 
-The wrapper retains the reviewed Stage-2 removable FAT anchor and bounded
-direct-child architecture. It validates and snapshots the already-open binary
-descriptor, hashes the snapshot against the frozen value, performs at most one
-execution attempt, accepts only exact stdout plus empty stderr and exit zero,
-and creates `COMPLETE` last. Every failure path is INCOMPLETE.
+The payload at commit `207e4c49c955befbfaa06dd6df976e2d23a23b39`
+is CONFIRMED **HIGH / NO-GO**. Its hash-then-execute-by-path snapshot could be
+replaced during a mutable interval, allowing different harmless host code to
+execute and false COMPLETE.
+
+The remediated wrapper retains the reviewed Stage-2 removable FAT anchor and
+bounded direct-child architecture, but removes the snapshot. It consumes the
+one-shot marker, remounts only the exact validated USB device/mount read-only,
+independently confirms that same identity and `ro` state from `/proc/mounts`,
+then performs the final size/hash check and one pathname execution entirely
+inside that RO window. It captures only shell exit state. After a known child
+termination it remounts the same pair RW, independently verifies `rw`, and only
+then writes results. `COMPLETE` remains last.
+
+Disposable Linux/arm64 FAT32 tests confirm that RO blocks pathname replacement,
+truncation, and ordinary in-place writes while allowing a harmless host stub to
+execute. A writable descriptor retained before remount causes the RO remount
+to fail busy; the wrapper therefore cannot proceed to hash or execution. The
+installed BusyBox remount command/syntax remains physically UNKNOWN and is a
+fail-closed capability check, not an assumption.
+
+If the execution child becomes uncertain/stuck or RW restoration cannot be
+proven, the initial INCOMPLETE state remains, the marker remains consumed, and
+physical USB removal is the documented recovery. No physical GO is declared.
 
 ## Evidence state
 
@@ -45,11 +64,23 @@ and creates `COMPLETE` last. Every failure path is INCOMPLETE.
 - **CONFIRMED:** the committed host build is reproducible and passes its static
   ABI/import/source gates.
 - **CONFIRMED:** host-stub adversarial tests pass without running the ARM ELF.
+- **CONFIRMED:** real disposable Linux FAT remount tests establish the stated
+  normal-writer immutability and retained-writable-handle fail-closed behavior.
 - **UNKNOWN:** whether the installed kernel, loader, and libc will load and
   return from this custom ELF.
+- **UNKNOWN:** whether installed BusyBox v1.29.3 accepts the exact narrow
+  remount syntax and reports the expected `/proc/mounts` transitions.
 - **NOT AUTHORISED:** physical use until a new independent safety review returns
   GO for only the exact frozen commit, binary hash, payload, and one attempt.
 
 This work does not prove RoadTop patching, ABI suitability for a feature
 binary, library shadowing, persistence, application replacement, or firmware
 compatibility.
+
+## Threat model
+
+The safety objective is exact-file execution on a normal, non-hostile stock
+system, protecting against wrapper races, pathname replacement, retained
+ordinary writers, and accidental mutation. It does not claim protection from
+a malicious privileged root process deliberately remounting the USB RW during
+the execution window.

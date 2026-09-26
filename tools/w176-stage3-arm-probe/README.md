@@ -13,11 +13,11 @@ and libc load a small custom ELF from removable USB and return normally?
 `probe.c` performs one libc `write` to standard output and returns zero only
 when every byte was written. It does not open a file, inspect the target,
 access a device, use RoadTop libraries, create another process, use networking,
-change privileges, signal another process, mount anything, or persist. The
-reviewed shell wrapper owns stdout/stderr capture and writes only beneath the
-validated removable filesystem.
+change privileges, signal another process, mount anything, or persist. During
+the execution attempt its harmless stdout/stderr are discarded to `/dev/null`;
+only its direct-child exit status is retained in shell state.
 
-The exact expected stdout is:
+The source emits this fixed marker, but Stage-3 does not use it as evidence:
 
 ```text
 schema=1
@@ -130,31 +130,101 @@ mount root. Results use a fresh relative `stage3-arm-probe[-N]` directory. The
 wrapper never falls back to internal storage and does not resolve later output
 writes through the original mount pathname.
 
-Before the execution attempt, the wrapper opens the reviewed binary once,
-checks its regular-file/path identity and exact size, copies that open
-descriptor into a private USB result-directory snapshot, and verifies the
-snapshot's exact SHA-256. Only that verified snapshot can become the one direct
-child. Original and snapshot metadata are checked again afterward.
+The prior snapshot-by-path design at commit
+`207e4c49c955befbfaa06dd6df976e2d23a23b39` is **NO-GO**. A confirmed HIGH
+host reproduction replaced its mutable snapshot between hash validation and
+the execution identity baseline, executed different harmless code, and
+produced false COMPLETE.
+
+The replacement design creates a read-only USB execution window:
+
+1. validate the exact removable FAT device/mount and require its established
+   `rw`, `dirsync`, and executable state;
+2. create the fresh result directory and commit initial INCOMPLETE;
+3. perform the bounded-runner self-test and preliminary binary checks;
+4. remove the real arming marker and verify it is gone;
+5. invoke the system `mount` command only for
+   `mount -o remount,ro <validated-device> <validated-mount>`;
+6. independently re-read `/proc/mounts` and require the same device, mount,
+   filesystem, anchored directory, `ro`, no `rw`, and no `noexec`;
+7. only while that state holds, revalidate type/size, calculate the final exact
+   SHA-256, and execute that exact pathname once with no USB output;
+8. after a known child termination, remount only the same pair RW and
+   independently require `rw` with no `ro`;
+9. only after RW restoration, commit the hash, capabilities, execution result,
+   final status, and finally `COMPLETE`.
+
+There is no execution snapshot and no post-execution metadata identity claim.
+A new USB-supplied sealing helper is not used: the already-running reviewed
+shell wrapper invokes only stock system `mount`, `awk`, `stat`, and `sha256sum`
+and evaluates `/proc/mounts` itself.
+A failed or falsely successful RO transition cannot execute the binary. An
+unknown/stuck child or unverified RW restoration leaves the already-written
+INCOMPLETE state and USB read-only; physical removal is the recovery action.
+The real marker is not recreated, so reinsertion cannot automatically retry.
 
 The parent `/proc` state machine has a five-second normal deadline, one-second
 TERM phase, and one-second KILL phase, plus a destructive-timeout self-test
 before the probe. UNKNOWN state, PID reuse/identity change, signal failure,
-timeout, nonzero/signal exit, loader stderr, unexpected stdout, hash mismatch,
-or output failure leaves the result INCOMPLETE without `COMPLETE`. As with the
+timeout, nonzero/signal exit, hash mismatch, mount-state mismatch, or output
+failure leaves the result INCOMPLETE without `COMPLETE`. As with the
 reviewed Stage-2 runner, a child stuck in uninterruptible kernel `D` state
 cannot be synchronously removed by KILL; that condition is fatal and cannot
-produce success.
+produce success or trigger an RW remount.
 
-`STATUS.txt` starts INCOMPLETE. Success requires exact stdout, empty stderr,
-exit zero, the frozen hash, zero mandatory failures, all required regular
-outputs, and a COMPLETE status. The regular non-symlink `COMPLETE` marker is
-committed last.
+`STATUS.txt` starts INCOMPLETE. Success requires a confirmed RO window, final
+frozen hash inside that window, known exit zero, confirmed RW restoration,
+zero mandatory failures, all required regular outputs, and a COMPLETE status.
+The regular non-symlink `COMPLETE` marker is committed last.
+
+## Real Linux FAT semantics
+
+`FatTest.Dockerfile` and `test_fat_ro_window.sh` exercise a disposable loop
+device and FAT32 filesystem inside a privileged, pinned Linux/arm64 container.
+They never touch a macOS mount and never execute `payload/arm_probe`.
+
+The observed Linux FAT result is:
+
+- normal RW writes succeed;
+- `/proc/mounts` independently confirms RO and later RW;
+- rename-over, truncation, and in-place append all fail while RO, including
+  fresh rename/write attempts after the final hash and before execution;
+- the candidate hash remains stable and a harmless host shell stub executes;
+- after confirmed RW restoration, output writes and the transaction resume;
+- a writer trying to open/write after RO fails;
+- an ordinary writable descriptor retained before remount causes the RO
+  remount to fail as busy; the filesystem remains RW and that retained writer
+  can still write.
+
+The last case is fail-closed by design: the wrapper verifies actual RO state
+and does not hash or execute when remount is rejected. Installed BusyBox
+v1.29.3 mount syntax for this exact operation is still physically UNKNOWN;
+the wrapper treats command absence, unsupported syntax, nonzero status, or a
+non-RO `/proc/mounts` result as no-execution failure.
+
+## Threat model
+
+The objective is exact-file execution on a normal, non-hostile embedded
+system. The RO window protects against wrapper races, pathname replacement,
+rename-over, truncation, retained ordinary writers, and accidental mutation.
+It does not attempt to defend against a malicious privileged root process that
+deliberately remounts the USB RW during the window. The stock RoadTop system is
+trusted for this compatibility experiment.
 
 ## Host-only commands
 
 After the pinned image has been built, `verify.sh` performs the complete static
 gate. `test_stage3_arm_probe.py` substitutes host shell stubs for execution
 tests; it never transforms or runs `payload/arm_probe`.
+
+The real FAT test is run from this directory with:
+
+```text
+docker build --platform linux/arm64 -f FatTest.Dockerfile \
+  -t geminitop-w176-fat-ro-test:bookworm .
+docker run --rm --privileged --platform linux/arm64 \
+  geminitop-w176-fat-ro-test:bookworm
+```
 
 No QEMU, binfmt, Rosetta, target execution, or other emulation is used anywhere
 in this workflow.
