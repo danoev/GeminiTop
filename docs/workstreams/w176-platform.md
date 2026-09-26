@@ -24,6 +24,10 @@ maintained in `docs/platform/w176-patchability.md`.
   build configuration, exact init/USB startup topology, NVM PATH/library
   precedence, and ELF32 ARM EABI5 hard-float through glibc 2.30's
   `/lib/ld-linux-armhf.so.3` interpreter.
+- CONFIRMED: the later host-only Stage-3 build uses a pinned official Arm GNU
+  A-profile 9.2-2019.12 AArch64-Linux-hosted toolchain and pinned Linux/arm64
+  container; two clean builds of the inert custom ELF are byte-identical and
+  the static ABI/import/source gate passes. The ARM ELF has not run.
 - REFERENCE ONLY: the Benz v2.0.65 archive contains a Gemini container, a
   validated Linux 4.9.217 uImage, and SquashFS images. Separately, the original
   Audi reconnaissance capture showed a Gemini/ARMv7 runtime and stock
@@ -31,7 +35,7 @@ maintained in `docs/platform/w176-patchability.md`.
 - INFERENCE: the installed v2.0.61 and reference v2.0.65 share a substantial
   S7-QA/Gemini platform topology. Matching names, sizes, and kernel release do
   not establish byte identity or update compatibility.
-- UNKNOWN: commercial board identity, custom ARM ELF loadability, complete
+- UNKNOWN: commercial board identity, custom ARM ELF physical loadability, complete
   userspace compatibility beyond the captured boundary, update compatibility,
   framebuffer pixel semantics beyond the captured channel metadata, and
   unobserved feature flags.
@@ -61,10 +65,10 @@ No audio-routing patch or MCU command belongs in the common-platform phase.
 No CAN transmission, MCU command, illumination patch, or forced day/night value
 is authorized in this phase.
 
-## Still blocked after Stage-2
+## Still blocked after the host-only Stage-3 build
 
-- creating a physical ARM execution payload until a pinned compatible Linux
-  ARMHF glibc toolchain/sysroot and reproducible binary provenance exist;
+- using the unarmed Stage-3 payload physically until a fresh independent safety
+  review verifies the exact frozen commit, binary SHA-256, wrapper, and tests;
 - approving rendering solely from dimensions and 32-bpp metadata;
 - treating a matching partition name/size as firmware byte compatibility;
 - identifying the unit as QD507 (or any other marketing board identifier);
@@ -74,5 +78,7 @@ is authorized in this phase.
   identity.
 
 Stage-2 completed successfully after its separate independent GO. Its payload
-remains a frozen historical evidence point. No Stage-3 executable exists and no
-physical ARM execution is approved; see `docs/platform/w176-stage2-evidence.md`.
+remains a frozen historical evidence point. The Stage-3 executable/payload now
+exists for independent review only: it is unarmed, has never been run or
+emulated, and has no physical approval. See
+`docs/platform/w176-stage3-arm-probe.md`.

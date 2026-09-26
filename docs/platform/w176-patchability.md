@@ -13,7 +13,7 @@ useful only insofar as it reduces the risk of that decision.
 
 | Route | Current evidence | State | Present decision |
 |---|---|---|---|
-| 1. USB runtime patch/injection | Stage-1 and Stage-2 prove that the stock root-run mdev action executes removable-root `gemn_auto.sh`. Installed ELF evidence proves ARM EABI5 hard-float with `/lib/ld-linux-armhf.so.3` and glibc 2.30. No custom ARM executable has run. | Shell autorun and ABI facts CONFIRMED; custom ARM loadability UNKNOWN | **Preferred route.** It is removable and avoids flash/NVM writes. A dynamic inert execution probe is the next physical gate, but no payload is created until a compatible reproducible ARMHF build environment is available and audited. |
+| 1. USB runtime patch/injection | Stage-1 and Stage-2 prove that the stock root-run mdev action executes removable-root `gemn_auto.sh`. Installed ELF evidence proves ARM EABI5 hard-float with `/lib/ld-linux-armhf.so.3` and glibc 2.30. The Stage-3 inert binary is reproducibly built and statically audited, but has never run. | Shell autorun, installed ABI, and host static gate CONFIRMED; custom ARM physical loadability UNKNOWN | **Preferred route.** It is removable and avoids flash/NVM writes. The unarmed Stage-3 payload may proceed only to fresh independent safety review; no physical GO is declared. |
 | 2. Writable-storage/overlay patch | `/etc` and `/root` are tmpfs. The `/etc` overlay upper/work layers are volatile. NVM and userdata are persistent YAFFS2 mounts; installed init places `/media/flash/nvm/bin` and `/media/flash/nvm/lib` first in PATH and library search order. | Persistent path precedence CONFIRMED; safe override behavior UNKNOWN | Architecturally plausible, but persistent and higher risk. Do not write NVM/userdata or test binary/library shadowing until route 1 and recovery controls are established. |
 | 3. Modified application SquashFS | Installed `mtd11` is named `spapp.` and `/dev/blockrom11` is mounted read-only at `/tmp/sp/application`; Launcher is `/application/bin/Launcher`. The reference `spapp.` contains the application layer. | Installed facts CONFIRMED; mapping to the same reference image format is INFERENCE | Potentially narrower than a full image, but still a flash operation and currently blocked. It requires exact installed layout/update verification and proven recovery first. |
 | 4. Full firmware fork | Reference BINs can be statically unpacked. Existing legacy tooling can rebuild reference-style SquashFS regions and refresh uImage CRC/MD5 fields, but uses fixed historical layouts and has not been validated for the installed target. | REFERENCE ONLY / UNKNOWN | Highest-risk and last choice. Do not create or flash an installed-target image in this phase. |
@@ -44,11 +44,13 @@ no RPATH/RUNPATH. Installed libc, libstdc++, BusyBox, the loader, Launcher, and
 two platform libraries differ from v2.0.65, while five selected services match.
 No byte difference alone proves ABI incompatibility.
 
-UNKNOWN: whether our own ARM ELF loads and exits cleanly. A trivial dynamic C
-probe could answer that without target storage writes, but the present ARM64
-macOS host lacks a provenance-pinned Linux ARMHF glibc toolchain/sysroot. No
-Stage-3 payload is created until its exact output can be rebuilt and statically
-shown to meet the installed ABI boundary.
+UNKNOWN: whether our own ARM ELF loads and exits cleanly. The host prerequisite
+has now been resolved with the official AArch64-Linux-hosted Arm GNU A-profile
+9.2-2019.12 toolchain and a digest-pinned Linux/arm64 container. Two clean
+builds of the 15-line inert C probe are identical, and static inspection shows
+only the installed-compatible loader, `libc.so.6`, and `GLIBC_2.4` boundary.
+The isolated payload remains deliberately unarmed and requires a fresh
+independent safety review before any one-shot physical test.
 
 ## Firmware format and integrity
 
@@ -83,8 +85,9 @@ known. Therefore any SquashFS or firmware route remains blocked.
 
 1. Installed startup, overlay, USB-action, loader, and library evidence is now
    confirmed and recorded offline.
-2. Establish a pinned Linux ARMHF toolchain/sysroot compatible with glibc 2.30;
-   then build and independently audit one inert dynamic USB loadability probe.
+2. The pinned Linux ARMHF build/static gate is complete. Independently review
+   the exact frozen Stage-3 source, binary, wrapper, tests, and hash before any
+   one-shot physical loadability test.
 3. Prefer a removable, non-persistent USB runtime mechanism for early fixes.
 4. Consider a writable overlay only if installed startup explicitly supports a
    reversible hook and its storage boundary is proven safe.
@@ -92,6 +95,6 @@ known. Therefore any SquashFS or firmware route remains blocked.
    recovery path are proven independently.
 6. Treat a full firmware fork as the final route, not the default.
 
-Current recommendation: route 1 remains the safest mechanism, but the execution
-payload gate is not satisfied. Routes 2–4 remain blocked. Stage-2 itself was
-successfully completed; no Stage-3 physical GO is declared here.
+Current recommendation: route 1 remains the safest mechanism. Its host build
+and static payload gate is satisfied, but installed-target loadability remains
+UNKNOWN. Routes 2–4 remain blocked. No Stage-3 physical GO is declared here.

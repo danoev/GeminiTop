@@ -137,24 +137,18 @@ runtime filenames/sizes, and the shared Gemini/8368_XU configuration make it
 structurally useful for static investigation; they do not establish update or
 flash compatibility.
 
-## ARM execution decision
+## ARM execution decision after resolving the host build gate
 
-Architecture strongly supports a reversible USB runtime route; custom ARM
-loadability remains the next physical gate. No compatible, provenance-pinned
-ARMHF glibc build environment is currently available on the ARM64 macOS host.
-The locally installed Apple Clang has no Linux ARMHF glibc sysroot, and the
-official matching GNU A-profile 9.2-2019.12 binaries are Linux-hosted. Without
-a reproducible toolchain/sysroot that permits static proof of interpreter,
-NEEDED libraries, imported symbols, and symbol versions, source-to-binary
-provenance is insufficient for a physical payload.
+The Stage-2 evidence above remains unchanged. A later host-only Stage-3 task
+resolved its one identified prerequisite using the official Arm GNU A-profile
+9.2-2019.12 AArch64-Linux-hosted ARMHF toolchain in a digest-pinned Linux/arm64
+container. Two clean builds are byte-identical, and the resulting inert ELF
+passes the complete static interpreter, NEEDED, symbol-version, import, source,
+and architecture gate.
 
-Therefore no Stage-3 executable or wrapper has been created:
-
-```text
-ARM EXECUTION PROOF: NOT READY
-```
-
-The smallest missing prerequisite is a pinned, independently reviewable Linux
-ARMHF toolchain/sysroot compatible with the installed glibc 2.30 boundary,
-followed by an offline rebuild and complete ELF/import/version audit. This is a
-build-environment gate, not evidence that custom code is incompatible.
+An isolated, deliberately unarmed Stage-3 review payload now exists at
+`tools/w176-stage3-arm-probe/`. This changes the state from “build prerequisite
+missing” to “ready for fresh independent code-safety review”; it does not add
+physical evidence. The binary has never been executed or emulated, no vehicle
+action has occurred, and custom ARM loadability remains UNKNOWN. See
+`w176-stage3-arm-probe.md`.
