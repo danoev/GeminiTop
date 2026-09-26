@@ -13,8 +13,8 @@ useful only insofar as it reduces the risk of that decision.
 
 | Route | Current evidence | State | Present decision |
 |---|---|---|---|
-| 1. USB runtime patch/injection | Stage-1 itself proves that the stock root-run mdev action executes a removable-root shell payload. The exact installed USB action and startup files are not yet captured. No custom ARM executable has been run. | Shell autorun CONFIRMED; ARM ABI/loadability UNKNOWN | **Preferred research route.** It is the most reversible and avoids flash/NVM writes. Stage-2 is read-only and obtains the startup/ABI evidence needed before proposing a later inert executable test. |
-| 2. Writable-storage/overlay patch | `/etc` and `/root` are tmpfs. `/tmp/sp/system/etc` is an overlay with read-only `/usr/local/etc` lowerdir and `/tmp/etc_up`/`/tmp/etc_wk` upper/work directories. NVM and userdata are persistent YAFFS2 mounts. | Volatile overlay topology CONFIRMED; persistent startup influence UNKNOWN | Do not write NVM/userdata. Stage-2 reads the small init/mount scripts to determine whether any reviewed, reversible overlay hook exists. A tmpfs upper layer is not persistence. |
+| 1. USB runtime patch/injection | Stage-1 and Stage-2 prove that the stock root-run mdev action executes removable-root `gemn_auto.sh`. Installed ELF evidence proves ARM EABI5 hard-float with `/lib/ld-linux-armhf.so.3` and glibc 2.30. No custom ARM executable has run. | Shell autorun and ABI facts CONFIRMED; custom ARM loadability UNKNOWN | **Preferred route.** It is removable and avoids flash/NVM writes. A dynamic inert execution probe is the next physical gate, but no payload is created until a compatible reproducible ARMHF build environment is available and audited. |
+| 2. Writable-storage/overlay patch | `/etc` and `/root` are tmpfs. The `/etc` overlay upper/work layers are volatile. NVM and userdata are persistent YAFFS2 mounts; installed init places `/media/flash/nvm/bin` and `/media/flash/nvm/lib` first in PATH and library search order. | Persistent path precedence CONFIRMED; safe override behavior UNKNOWN | Architecturally plausible, but persistent and higher risk. Do not write NVM/userdata or test binary/library shadowing until route 1 and recovery controls are established. |
 | 3. Modified application SquashFS | Installed `mtd11` is named `spapp.` and `/dev/blockrom11` is mounted read-only at `/tmp/sp/application`; Launcher is `/application/bin/Launcher`. The reference `spapp.` contains the application layer. | Installed facts CONFIRMED; mapping to the same reference image format is INFERENCE | Potentially narrower than a full image, but still a flash operation and currently blocked. It requires exact installed layout/update verification and proven recovery first. |
 | 4. Full firmware fork | Reference BINs can be statically unpacked. Existing legacy tooling can rebuild reference-style SquashFS regions and refresh uImage CRC/MD5 fields, but uses fixed historical layouts and has not been validated for the installed target. | REFERENCE ONLY / UNKNOWN | Highest-risk and last choice. Do not create or flash an installed-target image in this phase. |
 
@@ -29,26 +29,26 @@ CONFIRMED on the installed target:
 - root, SDK, and application filesystems are read-only SquashFS mounts;
 - the USB autorun process is root-owned and invokes the Stage-1 shell payload.
 
-REFERENCE ONLY v2.0.65 init files mount `spsdk.` at `/usr/local`, `spapp.` at
-`/application`, and start Launcher and platform services. Stage-2 copies the
-exact installed init/config files needed to determine whether v2.0.61 does the
-same and whether a non-persistent USB hook can coexist with stock startup.
+CONFIRMED installed v2.0.61 init files mount `spsdk.` at `/usr/local`, `spapp.`
+at `/application`, and declare Launcher and platform services. The observed
+Launcher command line selects the installed `ncLauncher` definition with
+`--dfb:no-layers-clear`. See `w176-stage2-evidence.md` for the exact sanitised
+startup result.
 
 ## Userspace ABI and own-code viability
 
-CONFIRMED: the installed CPU/kernel are ARMv7/armv7l and stock Launcher exists.
-REFERENCE ONLY: the v2.0.65 Launcher is ARM EABI5, requests
-`/lib/ld-linux-armhf.so.3`, and links against glibc 2.30-era C/C++ and platform
-libraries. UNKNOWN: whether the installed loader, libc, libstdc++, and platform
-libraries are byte-identical and whether a binary built with the current
-toolchain would load cleanly.
+CONFIRMED: installed Launcher is ELF32 little-endian ARM EABI5 hard-float,
+dynamically linked through `/lib/ld-linux-armhf.so.3` to the installed
+`ld-2.30.so`. Its recorded version needs are `GLIBC_2.4` and `GCC_3.5`; it has
+no RPATH/RUNPATH. Installed libc, libstdc++, BusyBox, the loader, Launcher, and
+two platform libraries differ from v2.0.65, while five selected services match.
+No byte difference alone proves ABI incompatibility.
 
-Stage-2 therefore copies the small installed dynamic loader and Launcher for
-offline ELF inspection; it hashes installed libc, libstdc++, BusyBox, two
-Launcher platform libraries, and selected core services. This does not execute
-any ARM code. If the ABI evidence aligns, the next proposal should be a separate
-reviewed, inert USB executable that reports only its own startup/ABI status to
-USB. It must not replace Launcher or touch services merely to prove loadability.
+UNKNOWN: whether our own ARM ELF loads and exits cleanly. A trivial dynamic C
+probe could answer that without target storage writes, but the present ARM64
+macOS host lacks a provenance-pinned Linux ARMHF glibc toolchain/sysroot. No
+Stage-3 payload is created until its exact output can be rebuilt and statically
+shown to meet the installed ABI boundary.
 
 ## Firmware format and integrity
 
@@ -79,12 +79,12 @@ verification. No verified A/B application slot, automatic rollback, recovery
 button sequence, rescue image, or external programming procedure is currently
 known. Therefore any SquashFS or firmware route remains blocked.
 
-## Decision gate after Stage-2
+## Decision after Stage-2
 
-1. Confirm installed startup, overlay, USB-action, loader, and library evidence
-   offline.
-2. If ABI evidence is coherent, design a new, separately reviewed inert USB
-   loadability probe; do not fold execution into Stage-2.
+1. Installed startup, overlay, USB-action, loader, and library evidence is now
+   confirmed and recorded offline.
+2. Establish a pinned Linux ARMHF toolchain/sysroot compatible with glibc 2.30;
+   then build and independently audit one inert dynamic USB loadability probe.
 3. Prefer a removable, non-persistent USB runtime mechanism for early fixes.
 4. Consider a writable overlay only if installed startup explicitly supports a
    reversible hook and its storage boundary is proven safe.
@@ -92,5 +92,6 @@ known. Therefore any SquashFS or firmware route remains blocked.
    recovery path are proven independently.
 6. Treat a full firmware fork as the final route, not the default.
 
-Current recommendation: continue toward route 1 evidence. Routes 2–4 remain
-blocked; no physical Stage-2 GO is declared here.
+Current recommendation: route 1 remains the safest mechanism, but the execution
+payload gate is not satisfied. Routes 2–4 remain blocked. Stage-2 itself was
+successfully completed; no Stage-3 physical GO is declared here.

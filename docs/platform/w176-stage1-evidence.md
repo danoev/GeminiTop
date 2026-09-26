@@ -85,21 +85,21 @@ to remove this noise.
 
 | Area | Installed physical target | Mercedes v2.0.65 reference | Result | Evidence state | Implication |
 |---|---|---|---|---|---|
-| Architecture | ARMv7, implementer 0x41/part 0xc07 | ARM 32-bit EABI5 ELF files | MATCH | CONFIRMED vs REFERENCE ONLY | Same broad architecture; exact ABI/toolchain remains unproven. |
+| Architecture | ARMv7; Stage-2 later confirmed ELF32 ARM EABI5 hard-float | ARM 32-bit EABI5 ELF files | MATCH | CONFIRMED vs REFERENCE ONLY | Installed loader/ABI is now recorded in `w176-stage2-evidence.md`; custom-code loadability remains unproven. |
 | Kernel | 4.9.217 | validated `Linux-4.9.217` uImage | MATCH | CONFIRMED vs REFERENCE ONLY | Kernel release aligns, not proof of identical config/modules. |
-| Platform identity | `GEMINI` | `GEMINI`, `8368-XU` strings | MATCH/PARTIAL | CONFIRMED vs REFERENCE ONLY | Same platform family clue; no commercial board identity. |
+| Platform identity | `GEMINI`; Stage-2 later captured installed `8368_XU` configuration strings | `GEMINI`, `8368-XU` strings | MATCH | CONFIRMED vs REFERENCE ONLY | Same platform/configuration family; no commercial board identity. |
 | Boot command line | root blockrom8, SquashFS, 256 MiB | no authoritative installed-style command line recovered | UNKNOWN | CONFIRMED vs UNKNOWN | Reference cannot validate installed boot arguments. |
 | MTD names/order | 28-entry map; rootfs./spsdk./spapp. at 8/10/11 | container records include rootfs./spsdk./spapp.; no full live MTD table | UNKNOWN/PARTIAL | CONFIRMED vs REFERENCE ONLY | Component names align; full order equivalence is unproven. |
 | Partition sizes | rootfs 5 MiB, SDK 48 MiB, app 27 MiB, NVM 8 MiB, userdata 6 MiB | payload sizes: rootfs 3,883,008; SDK 46,325,760; app 21,319,680 bytes | UNKNOWN | CONFIRMED allocations vs REFERENCE ONLY payloads | Payload length is not partition allocation; do not equate them. |
 | Read-only roots | root, `/usr/local`, `/application` are SquashFS RO | rootfs plus SDK/app SquashFS; rootfs symlinks to `/tmp/sp/...` | MATCH/PARTIAL | CONFIRMED vs REFERENCE ONLY | Topology aligns; exact files/content await selective comparison. |
 | Writable data | NVM/userdata YAFFS2 RW | init scripts mount NVM/userdata YAFFS2 | MATCH | CONFIRMED vs REFERENCE ONLY | Arrangement aligns; contents/semantics were not read. |
 | Application roots | `/application`, `/usr/local` | `/application` and `/usr/local` through `/tmp/sp` | MATCH | CONFIRMED vs REFERENCE ONLY | Common path model is supported. |
-| Launcher | `/application/bin/Launcher`, 92,416 bytes | same path, 92,544 bytes | DIFFERENT | CONFIRMED vs REFERENCE ONLY | Installed Launcher is not byte-identical; Stage-2 needs its bytes for offline ABI/linkage analysis. |
-| USB autorun | mdev -> `usb_action_8368-U` -> `gemn_auto.sh` | `mdev.conf` dispatches sd* to the same action script, which calls root `gemn_auto.sh` | MATCH/PARTIAL | CONFIRMED chain vs REFERENCE ONLY content | Mechanism aligns; installed scripts must be selectively captured before content equality is claimed. |
+| Launcher | `/application/bin/Launcher`, 92,416 bytes | same path, 92,544 bytes | DIFFERENT | CONFIRMED vs REFERENCE ONLY | Stage-2 SHA-256 proves non-identity and establishes the installed ELF boundary. |
+| USB autorun | mdev -> `usb_action_8368-U` -> `gemn_auto.sh` | `mdev.conf` dispatches sd* to the same action script, which calls root `gemn_auto.sh` | MATCH | CONFIRMED installed content vs REFERENCE ONLY | Installed dispatch and action contents were captured by Stage-2. |
 | Framebuffer/display | 1920x720, virtual 1920x1440, 32 bpp, stride 7680 | init environment/config contains DirectFB/fb0 and reference assets assume 1920x720 | MATCH/PARTIAL | CONFIRMED vs REFERENCE ONLY | Strong topology alignment; exact pixel semantics/runtime support remain unapproved. |
 | Touch | `fts_ts`, event3 | init GUI/environment names event3; driver configuration is reference-only | MATCH/PARTIAL | CONFIRMED vs REFERENCE ONLY | Same observed event placement; do not hard-code enumeration. |
-| Major services | servicemanager, resourcemanager, networkmanager, pfc_server, device_server and others observed | same paths/names; several captured sizes also match | MATCH/PARTIAL | CONFIRMED vs REFERENCE ONLY | Names/sizes are not content identity; Stage-2 hashes only selected core platform services. |
-| Generic platform libraries | not inventoried by Stage-1 | Launcher links to `libappframework` and `libappmcucommunication` | UNKNOWN | UNKNOWN vs REFERENCE ONLY | Stage-2 hashes exact installed library paths; it does not copy them. |
+| Major services | servicemanager, resourcemanager, networkmanager, pfc_server, device_server and others observed | same paths/names | MATCH for five selected binaries | CONFIRMED vs REFERENCE ONLY | Stage-2 SHA-256 values match the five named reference service binaries. |
+| Generic platform libraries | Stage-2 hashes `libappframework` and `libappmcucommunication` | same paths in reference | DIFFERENT | CONFIRMED vs REFERENCE ONLY | Both selected installed library hashes differ; byte difference alone is not ABI incompatibility. |
 
 ## Resulting evidence state
 
@@ -109,11 +109,12 @@ framebuffer metadata, touch identity/event, application/service paths, USB mount
 and observed autorun chain. Reference kernel/path/topology similarities support
 an INFERENCE of a common S7-QA/Gemini platform lineage.
 
-Still REFERENCE ONLY: v2.0.65 file contents, init/config contents, ELF linkage,
-`8368_XU` configuration, and all reference hashes. Still UNKNOWN: QD507 or any
-commercial identity, exact installed userspace/library ABI, binary equivalence,
-update/flash compatibility, raw partition content, deep MCU/CAN semantics, and
-deep audio routing.
+Stage-2 later promoted only the installed init/config contents, `8368_XU`
+configuration, ELF linkage/ABI, and selected installed hashes to CONFIRMED; see
+`w176-stage2-evidence.md`. v2.0.65 contents remain REFERENCE ONLY. Still
+UNKNOWN: QD507 or any commercial identity, custom-code loadability, update/flash
+compatibility, raw partition content, deep MCU/CAN semantics, and deep audio
+routing.
 
 ## Patchability implication
 
@@ -121,7 +122,8 @@ Stage-1 proves the least invasive entry boundary: stock root-run autorun can
 execute a reviewed shell payload from positively identified removable USB.
 It also proves that the application and SDK are read-only SquashFS mounts and
 that the observed writable `/etc` overlay uses a volatile tmpfs upper/work
-layer. It does not prove that arbitrary ARM executables will load, that
-persistent YAFFS2 storage can safely influence startup, that modified firmware
-is accepted, or that a recovery path exists. See `w176-patchability.md` for the
-route decision and the exact Stage-2 evidence gate.
+layer. Stage-2 confirms the installed ARM hard-float loader boundary and
+persistent NVM path precedence, but it still does not prove that our own ARM
+executable will load, that NVM shadowing is safe, that modified firmware is
+accepted, or that a recovery path exists. See `w176-patchability.md` for the
+route decision.

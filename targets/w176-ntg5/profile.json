@@ -6,7 +6,8 @@
   "compatibility_claim": false,
   "sources": [
     "owner-reported on-screen version strings",
-    "successful physical Stage-1 capture produced by commit 5f85cafd0416b0511cc4570b6e280613112d6243; sanitised derived facts only"
+    "successful physical Stage-1 capture produced by commit 5f85cafd0416b0511cc4570b6e280613112d6243; sanitised derived facts only",
+    "successful physical Stage-2 capture produced by commit 059db6e6aabdd0599967e413bd28c429ab0f0458; sanitised derived facts only"
   ],
   "facts": {
     "vehicle_family": {"state": "CONFIRMED", "value": "Mercedes W176 / NTG5*1"},
@@ -14,6 +15,7 @@
     "reported_mcu_version": {"state": "CONFIRMED", "value": "Z-2.01-250521"},
     "board_identifier": {"state": "UNKNOWN", "value": null},
     "hardware_identity": {"state": "CONFIRMED", "value": "GEMINI"},
+    "platform_configuration": {"state": "CONFIRMED", "value": "8368_XU build/configuration strings in installed /application/appinfo.rc; not a retail board identity"},
     "architecture": {"state": "CONFIRMED", "value": "ARMv7 armv7l; implementer 0x41, part 0xc07, revision 5"},
     "kernel_release": {"state": "CONFIRMED", "value": "4.9.217"},
     "boot_root": {"state": "CONFIRMED", "value": "/dev/blockrom8, squashfs, mem=256M"},
@@ -21,6 +23,7 @@
     "nvm_bytes": {"state": "CONFIRMED", "value": 8388608},
     "filesystem_topology": {"state": "CONFIRMED", "value": "root, /tmp/sp/usr/local, and /tmp/sp/application are read-only SquashFS; NVM and userdata are YAFFS2 read-write"},
     "runtime_overlay": {"state": "CONFIRMED", "value": "/tmp/sp/system/etc overlay: lowerdir=/usr/local/etc, upperdir=/tmp/etc_up, workdir=/tmp/etc_wk; /etc and /root are tmpfs"},
+    "persistent_path_precedence": {"state": "CONFIRMED", "value": "installed init places /media/flash/nvm/lib and /media/flash/nvm/bin before stock locations; override behavior is untested and unauthorized"},
     "framebuffer": {"state": "CONFIRMED", "value": "1920x720 visible, 1920x1440 virtual, 32 bpp, stride 7680"},
     "touch": {"state": "CONFIRMED", "value": "fts_ts, i2c-1 address 0x38, input3/event3"},
     "usb_mount": {"state": "CONFIRMED", "value": "/dev/sda1 -> /tmp/sp/mnt/sda1, vfat"},
@@ -28,7 +31,8 @@
     "usb_shell_payload_execution": {"state": "CONFIRMED", "value": "root-owned stock autorun executed the reviewed Stage-1 shell payload from removable USB"},
     "usb_handler_hash": {"state": "CONFIRMED", "value": "9ed1057f86c0388442d2db796d6dc3dec33f460aabd084dfa90d7024d309d1f6 (/usr/local/bin/Usbnet_ncm.sh)"},
     "launcher": {"state": "CONFIRMED", "value": "/application/bin/Launcher, 92416 bytes"},
-    "installed_userspace_abi": {"state": "UNKNOWN", "value": null},
+    "installed_userspace_abi": {"state": "CONFIRMED", "value": "ELF32 little-endian ARM EABI5 hard-float; interpreter /lib/ld-linux-armhf.so.3 -> ld-2.30.so; installed Launcher version needs GLIBC_2.4 and GCC_3.5; custom-code loadability remains UNKNOWN"},
+    "custom_arm_elf_loadability": {"state": "UNKNOWN", "value": null},
     "firmware_authentication": {"state": "UNKNOWN", "value": null},
     "verified_recovery_path": {"state": "UNKNOWN", "value": null},
     "application_names": {"state": "CONFIRMED", "value": ["Launcher", "aa_manager_service", "apple_carplay_server", "networkmanager"]},

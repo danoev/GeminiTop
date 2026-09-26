@@ -1,6 +1,10 @@
 # W176 Stage-2 selective platform capture
 
-Status: implemented for independent review; **not approved for physical use**.
+Status: historical frozen payload. Commit
+`059db6e6aabdd0599967e413bd28c429ab0f0458` received an independent physical
+GO and completed successfully on the installed target. See
+`w176-stage2-evidence.md` for sanitised results. This does not authorise a
+rerun, a modified payload, or any later execution probe.
 
 ## Question and necessity
 
@@ -128,4 +132,5 @@ The reference dynamic loader, libc, libstdc++, and BusyBox hashes are
 `b67b997d454d94d7eafc086ecaeb0c59b37320ff9abf2dcbaa9772d9935c44bd`,
 and `a495bbc5b21da2d369c5e0cc145ea61f34f1f2745abcbe69f4ae5d652c9060e8`
 respectively.
-No installed binary hash is known until a reviewed Stage-2 run occurs.
+Installed hashes and their comparison results are now recorded in
+`w176-stage2-evidence.md`. Raw captured files remain outside Git.

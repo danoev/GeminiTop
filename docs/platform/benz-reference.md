@@ -39,9 +39,10 @@ The successful installed-target Stage-1 capture now confirms several matching
 topology characteristics, documented in `w176-stage1-evidence.md`. They do not
 promote this image to a compatible update. In particular, the installed
 Launcher is 92,416 bytes while this reference Launcher is 92,544 bytes, proving
-that those two files differ. The separately reviewed Stage-2 design captures
-only the installed Launcher and small startup/config files, and hashes selected
-larger platform binaries, to resolve the remaining static-comparison questions.
+that those two files differ. The later successful Stage-2 capture resolved the
+selected static-comparison questions; sanitised results are recorded in
+`w176-stage2-evidence.md`. The reference remains structurally useful but is not
+byte-identical and is not an approved update.
 
 For patchability planning, direct static inspection of the extracted reference
 update-script bodies found uImage CRC plus component/chunk MD5 integrity logic.
