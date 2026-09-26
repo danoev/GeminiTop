@@ -20,7 +20,6 @@ ANCHOR_DISPLAY=$(pwd -P 2>/dev/null) || exit 1
 GUARD=./mount_guard.sh
 STAGE3=./stage3_arm_probe.sh
 BINARY=./arm_probe
-ARM_MARKER=./ARM_STAGE3_ARM_EXECUTION_PROBE
 
 for PAYLOAD_FILE in "$GUARD" "$STAGE3" "$BINARY"; do
     if [ ! -f "$PAYLOAD_FILE" ] || [ -L "$PAYLOAD_FILE" ]; then
@@ -33,9 +32,5 @@ USB_ROOT=$(/bin/sh "$GUARD" .) || exit 1
     printf '%s\n' "w176-stage3: validated root mismatch" >&2
     exit 1
 }
-if [ ! -f "$ARM_MARKER" ] || [ -L "$ARM_MARKER" ]; then
-    printf '%s\n' "w176-stage3: not armed; reviewed marker is absent or invalid" >&2
-    exit 1
-fi
 
 exec /bin/sh "$STAGE3" .

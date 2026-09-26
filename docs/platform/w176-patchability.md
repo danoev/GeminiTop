@@ -13,7 +13,7 @@ useful only insofar as it reduces the risk of that decision.
 
 | Route | Current evidence | State | Present decision |
 |---|---|---|---|
-| 1. USB runtime patch/injection | Stage-1 and Stage-2 prove that the stock root-run mdev action executes removable-root `gemn_auto.sh`. Installed ELF evidence proves ARM EABI5 hard-float with `/lib/ld-linux-armhf.so.3` and glibc 2.30. The inert binary is reproducibly built and statically audited, but has never run. The earlier mutable-snapshot Stage-3 wrapper is HIGH/NO-GO; its replacement uses a verified read-only USB execution window. | Shell autorun, installed ABI, host static gate, and disposable Linux FAT semantics CONFIRMED; installed BusyBox remount behavior and custom ARM physical loadability UNKNOWN | **Preferred route.** It is removable and avoids flash/NVM writes. The redesigned unarmed Stage-3 payload may proceed only to fresh independent safety review; no physical GO is declared. |
+| 1. USB runtime patch/injection | Stage-1 and Stage-2 prove that the stock root-run mdev action executes removable-root `gemn_auto.sh`. Installed ELF evidence proves ARM EABI5 hard-float with `/lib/ld-linux-armhf.so.3` and glibc 2.30. The inert binary is reproducibly built and statically audited, but has never run. Earlier mutable-snapshot and unlocked-RO Stage-3 wrappers are HIGH/NO-GO; the replacement serializes a verified read-only USB execution window with a persistent atomic FAT directory lock. | Shell autorun, installed ABI, host static gate, atomic-lock/RO host regressions, and disposable Linux FAT semantics CONFIRMED; installed BusyBox remount behavior and custom ARM physical loadability UNKNOWN | **Preferred route.** It is removable and avoids flash/NVM writes. The redesigned unarmed Stage-3 payload may proceed only to fresh independent safety review; no physical GO is declared. |
 | 2. Writable-storage/overlay patch | `/etc` and `/root` are tmpfs. The `/etc` overlay upper/work layers are volatile. NVM and userdata are persistent YAFFS2 mounts; installed init places `/media/flash/nvm/bin` and `/media/flash/nvm/lib` first in PATH and library search order. | Persistent path precedence CONFIRMED; safe override behavior UNKNOWN | Architecturally plausible, but persistent and higher risk. Do not write NVM/userdata or test binary/library shadowing until route 1 and recovery controls are established. |
 | 3. Modified application SquashFS | Installed `mtd11` is named `spapp.` and `/dev/blockrom11` is mounted read-only at `/tmp/sp/application`; Launcher is `/application/bin/Launcher`. The reference `spapp.` contains the application layer. | Installed facts CONFIRMED; mapping to the same reference image format is INFERENCE | Potentially narrower than a full image, but still a flash operation and currently blocked. It requires exact installed layout/update verification and proven recovery first. |
 | 4. Full firmware fork | Reference BINs can be statically unpacked. Existing legacy tooling can rebuild reference-style SquashFS regions and refresh uImage CRC/MD5 fields, but uses fixed historical layouts and has not been validated for the installed target. | REFERENCE ONLY / UNKNOWN | Highest-risk and last choice. Do not create or flash an installed-target image in this phase. |
@@ -59,6 +59,14 @@ only after the same validated USB device/mount is independently confirmed RO.
 Real disposable FAT tests support this normal-writer threat model, including
 fail-closed rejection when a writable descriptor prevents RO remount. Target
 BusyBox remount capability remains UNKNOWN and must fail closed.
+
+A later independent review CONFIRMED that the first RO-window wrapper was still
+HIGH/NO-GO under overlap: both invocations could pass the marker and one could
+restore RW during the other's integrity window. The current host-only design
+uses atomic `mkdir .stage3-arm-probe.lock` after USB anchoring and before marker
+handling. Only its winner can enter the complete marker/RO/hash/execute/RW/
+COMPLETE sequence, and the target never removes the lock. Reuse therefore
+requires deliberate off-target preparation and another exact-payload review.
 
 ## Firmware format and integrity
 

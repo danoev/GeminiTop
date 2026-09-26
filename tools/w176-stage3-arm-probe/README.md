@@ -120,9 +120,10 @@ stage3_arm_probe.sh
 ```
 
 The real marker `ARM_STAGE3_ARM_EXECUTION_PROBE` is deliberately absent and
-must never be tracked. Both the entrypoint and the stage script require it to
-be a real regular non-symlink. Creating it is a separate post-review physical
-action and is not authorised by this repository state.
+must never be tracked. The stage script checks it only after winning the atomic
+one-shot lock, and requires it to be a real regular non-symlink. Creating it is
+a separate post-review physical action and is not authorised by this repository
+state.
 
 The mount guard requires exactly one removable `/dev/sdN` partition, an
 approved FAT filesystem, and the payload directory to be the exact anchored
@@ -136,23 +137,43 @@ host reproduction replaced its mutable snapshot between hash validation and
 the execution identity baseline, executed different harmless code, and
 produced false COMPLETE.
 
-The replacement design creates a read-only USB execution window:
+Independent review of the first read-only-window revision at commit
+`e16c2e43777a8b0fd5885af3621d4f25bf7e5f4a` then CONFIRMED a second HIGH /
+NO-GO race: overlapping wrappers could both pass the marker check, both enter
+the shared sequence, both execute, and one could restore RW while the other
+still required RO integrity.
 
-1. validate the exact removable FAT device/mount and require its established
-   `rw`, `dirsync`, and executable state;
-2. create the fresh result directory and commit initial INCOMPLETE;
-3. perform the bounded-runner self-test and preliminary binary checks;
-4. remove the real arming marker and verify it is gone;
-5. invoke the system `mount` command only for
+The replacement design serialises the complete read-only USB execution window:
+
+1. anchor and validate the exact removable FAT USB root;
+2. atomically create the fixed relative directory
+   `.stage3-arm-probe.lock` and record ownership only after `mkdir` succeeds;
+3. verify the acquired path is a real non-symlink directory;
+4. only the lock owner checks the real arming marker;
+5. consume that marker and verify it is gone;
+6. create the fresh result directory and commit initial INCOMPLETE;
+7. require the established `rw`, `dirsync`, executable mount state, perform the
+   bounded-runner self-test, and complete preliminary binary checks;
+8. reverify lock ownership, then invoke the system `mount` command only for
    `mount -o remount,ro <validated-device> <validated-mount>`;
-6. independently re-read `/proc/mounts` and require the same device, mount,
+9. independently re-read `/proc/mounts` and require the same device, mount,
    filesystem, anchored directory, `ro`, no `rw`, and no `noexec`;
-7. only while that state holds, revalidate type/size, calculate the final exact
-   SHA-256, and execute that exact pathname once with no USB output;
-8. after a known child termination, remount only the same pair RW and
+10. only while that state holds and lock ownership remains valid, revalidate
+   type/size, calculate the final exact SHA-256, and execute that exact pathname
+   once with no USB output;
+11. after a known child termination and another ownership check, remount only
+   the same pair RW and
    independently require `rw` with no `ro`;
-9. only after RW restoration, commit the hash, capabilities, execution result,
-   final status, and finally `COMPLETE`.
+12. only after RW restoration, commit the hash, capabilities, execution result,
+   final status, and finally `COMPLETE`;
+13. leave `.stage3-arm-probe.lock` present on every success and failure path.
+
+The lock is never removed, judged stale, or replaced on target. An existing
+directory, ordinary file, symlink, failed `mkdir`, or false-successful `mkdir`
+fails before marker handling, output creation, remount, hash, execution, or
+COMPLETE. A losing concurrent wrapper cannot restore RW because every RO,
+hash, execution, and RW transition is reachable only by the invocation whose
+atomic `mkdir` succeeded.
 
 There is no execution snapshot and no post-execution metadata identity claim.
 A new USB-supplied sealing helper is not used: the already-running reviewed
@@ -162,6 +183,14 @@ A failed or falsely successful RO transition cannot execute the binary. An
 unknown/stuck child or unverified RW restoration leaves the already-written
 INCOMPLETE state and USB read-only; physical removal is the recovery action.
 The real marker is not recreated, so reinsertion cannot automatically retry.
+The persistent lock is the stronger one-shot barrier: reinvocation fails before
+marker handling even if someone mistakenly recreates the marker.
+
+For any later independently reviewed and separately authorised new attempt,
+USB preparation must happen off-target on the Mac: inspect the previous result,
+manually remove the old `.stage3-arm-probe.lock` directory, create a fresh real
+arming marker, and reverify the exact reviewed payload. The target scripts must
+never remove the lock automatically.
 
 The parent `/proc` state machine has a five-second normal deadline, one-second
 TERM phase, and one-second KILL phase, plus a destructive-timeout self-test
@@ -179,9 +208,10 @@ The regular non-symlink `COMPLETE` marker is committed last.
 
 ## Real Linux FAT semantics
 
-`FatTest.Dockerfile` and `test_fat_ro_window.sh` exercise a disposable loop
-device and FAT32 filesystem inside a privileged, pinned Linux/arm64 container.
-They never touch a macOS mount and never execute `payload/arm_probe`.
+`FatTest.Dockerfile`, `test_fat_ro_window.sh`, and
+`test_fat_lock_concurrency.sh` exercise disposable loop devices and FAT32
+filesystems inside a privileged, pinned Linux/arm64 container. They never touch
+a macOS mount and never execute `payload/arm_probe`.
 
 The observed Linux FAT result is:
 
@@ -194,7 +224,13 @@ The observed Linux FAT result is:
 - a writer trying to open/write after RO fails;
 - an ordinary writable descriptor retained before remount causes the RO
   remount to fail as busy; the filesystem remains RW and that retained writer
-  can still write.
+  can still write;
+- 50 pairs of simultaneous wrapper equivalents yield exactly 50 winners, 50
+  losers, 50 marker consumptions, 50 RO requests, 50 harmless host-stub
+  executions, 50 RW requests, and 50 COMPLETE transactions;
+- a second process started while the owner is paused on RO loses the lock,
+  issues no remount and no execution, and cannot restore RW early;
+- the lock remains after success.
 
 The last case is fail-closed by design: the wrapper verifies actual RO state
 and does not hash or execute when remount is rejected. Installed BusyBox

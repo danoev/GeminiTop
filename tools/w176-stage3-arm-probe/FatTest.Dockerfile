@@ -5,5 +5,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY test_fat_ro_window.sh /test_fat_ro_window.sh
+COPY test_fat_lock_concurrency.sh /test_fat_lock_concurrency.sh
 
-CMD ["/bin/sh", "/test_fat_ro_window.sh"]
+CMD ["/bin/sh", "-c", "/bin/sh /test_fat_ro_window.sh && /bin/sh /test_fat_lock_concurrency.sh"]

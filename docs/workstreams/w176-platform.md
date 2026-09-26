@@ -32,6 +32,13 @@ maintained in `docs/platform/w176-patchability.md`.
   host race produced false COMPLETE. Its read-only-window replacement passes
   disposable Linux FAT semantics and host-stub adversarial tests. Installed
   BusyBox remount behavior and physical custom-ELF loadability remain UNKNOWN.
+- CONFIRMED: the first read-only-window wrapper was also HIGH/NO-GO because
+  overlapping invocations could both execute and could break one another's RO
+  interval. The current host-only revision atomically acquires a persistent FAT
+  directory lock before marker handling and serializes the entire RO/hash/
+  execute/RW/COMPLETE sequence. Host overlap, paused-RO, reinvocation, malformed
+  lock, and 50-pair real FAT concurrency tests pass; physical use remains
+  unapproved.
 - REFERENCE ONLY: the Benz v2.0.65 archive contains a Gemini container, a
   validated Linux 4.9.217 uImage, and SquashFS images. Separately, the original
   Audi reconnaissance capture showed a Gemini/ARMv7 runtime and stock
@@ -73,7 +80,8 @@ is authorized in this phase.
 
 - using the redesigned unarmed Stage-3 payload physically until a fresh
   independent safety review verifies the exact frozen commit, binary SHA-256,
-  RO/RW mount-state transition, one-shot marker, wrapper, and tests;
+  atomic persistent lock, overlap/paused-RO behavior, RO/RW mount-state
+  transition, one-shot marker, wrapper, and tests;
 - approving rendering solely from dimensions and 32-bpp metadata;
 - treating a matching partition name/size as firmware byte compatibility;
 - identifying the unit as QD507 (or any other marketing board identifier);

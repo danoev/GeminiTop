@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -19,6 +20,8 @@ EXPECTED_STDOUT = (
     "started=1\n"
     "result=PASS\n"
 )
+LOCK_NAME = ".stage3-arm-probe.lock"
+CONCURRENCY_STRESS_REPETITIONS = 25
 
 
 class Stage3Fixture:
@@ -217,6 +220,25 @@ class Stage3Fixture:
             "if action == 'change-fail': raise SystemExit(1)\n",
         )
 
+    def install_lock_barrier(self) -> None:
+        real_mkdir = shutil.which("mkdir")
+        assert real_mkdir
+        barrier = self.root / "lock-barrier"
+        barrier.mkdir()
+        self.write_command(
+            "mkdir",
+            f"#!{sys.executable}\n"
+            "import os, pathlib, sys, time\n"
+            f"barrier = pathlib.Path({str(barrier)!r})\n"
+            f"if sys.argv[1:] == ['./{LOCK_NAME}']:\n"
+            "    (barrier / str(os.getpid())).touch()\n"
+            "    deadline = time.monotonic() + 5\n"
+            "    while len(list(barrier.iterdir())) < 2:\n"
+            "        if time.monotonic() >= deadline: raise SystemExit(124)\n"
+            "        time.sleep(0.005)\n"
+            f"os.execv({real_mkdir!r}, [{real_mkdir!r}, *sys.argv[1:]])\n",
+        )
+
     def set_stub(self, content: str) -> None:
         binary = self.usb / "arm_probe"
         if binary.exists() or binary.is_symlink():
@@ -277,6 +299,18 @@ class Stage3Fixture:
             stderr=subprocess.PIPE,
             timeout=timeout,
         )
+
+    def start_entry(self) -> subprocess.Popen[str]:
+        return subprocess.Popen(
+            ["/bin/sh", str(self.usb / "gemn_auto.sh")],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+
+    def event_lines(self) -> list[str]:
+        events = self.root / "events"
+        return events.read_text().splitlines() if events.exists() else []
 
     def run_stage(self, root: Path, timeout: int = 10) -> subprocess.CompletedProcess[str]:
         return subprocess.run(
@@ -359,7 +393,8 @@ class Stage3Tests(unittest.TestCase):
         self.assertIn("status=COMPLETE", (output / "STATUS.txt").read_text())
         self.assertEqual((output / "COMPLETE").read_text(), "complete=1\n")
         self.assertFalse((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").exists())
-        events = (self.fixture.root / "events").read_text().splitlines()
+        self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
+        events = self.fixture.event_lines()
         self.assertEqual(
             events,
             [
@@ -373,13 +408,18 @@ class Stage3Tests(unittest.TestCase):
         )
 
     def test_unarmed_and_symlink_markers_are_rejected(self):
-        marker = self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE"
-        marker.unlink()
-        self.assertNotEqual(self.fixture.run_entry().returncode, 0)
-        self.assertEqual(self.fixture.outputs(), [])
-        marker.symlink_to("ARM_STAGE3_ARM_EXECUTION_PROBE.example")
-        self.assertNotEqual(self.fixture.run_entry().returncode, 0)
-        self.assertEqual(self.fixture.outputs(), [])
+        for marker_type in ("absent", "symlink"):
+            with self.subTest(marker_type=marker_type):
+                self.fixture.cleanup()
+                self.fixture = Stage3Fixture()
+                marker = self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE"
+                marker.unlink()
+                if marker_type == "symlink":
+                    marker.symlink_to("ARM_STAGE3_ARM_EXECUTION_PROBE.example")
+                self.assertNotEqual(self.fixture.run_entry().returncode, 0)
+                self.assertEqual(self.fixture.outputs(), [])
+                self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
+                self.assertEqual(self.fixture.event_lines(), [])
 
     def test_wrong_nonremovable_zero_and_multiple_mounts_fail(self):
         cases = [
@@ -509,6 +549,132 @@ class Stage3Tests(unittest.TestCase):
         second = self.fixture.run_entry()
         self.assertNotEqual(second.returncode, 0)
         self.assertEqual(len(self.fixture.outputs()), output_count)
+        self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
+        self.assertEqual(sum(line.startswith("exec:") for line in self.fixture.event_lines()), 1)
+
+        self.fixture.arm()
+        third = self.fixture.run_entry()
+        self.assertNotEqual(third.returncode, 0)
+        self.assertTrue((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").is_file())
+        self.assertEqual(len(self.fixture.outputs()), output_count)
+        self.assertEqual(sum(line.startswith("exec:") for line in self.fixture.event_lines()), 1)
+
+    def test_atomic_lock_allows_exactly_one_overlapping_invocation(self):
+        self.fixture.install_lock_barrier()
+        first = self.fixture.start_entry()
+        second = self.fixture.start_entry()
+        first_stdout, first_stderr = first.communicate(timeout=10)
+        second_stdout, second_stderr = second.communicate(timeout=10)
+        self.assertEqual(sorted((first.returncode, second.returncode))[0], 0)
+        self.assertEqual(sum(code == 0 for code in (first.returncode, second.returncode)), 1)
+        self.assertTrue(first_stdout or first_stderr or second_stdout or second_stderr)
+        events = self.fixture.event_lines()
+        self.assertEqual(sum(line.startswith("mount-request:ro:") for line in events), 1)
+        self.assertEqual(sum(line.startswith("mount-request:rw:") for line in events), 1)
+        self.assertEqual(sum(line.startswith("hash:") for line in events), 1)
+        self.assertEqual(sum(line.startswith("exec:") for line in events), 1)
+        self.assertEqual(sum((path / "COMPLETE").is_file() for path in self.fixture.outputs()), 1)
+        self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
+
+    def test_atomic_lock_concurrency_stress(self):
+        executions = 0
+        for repetition in range(CONCURRENCY_STRESS_REPETITIONS):
+            with self.subTest(repetition=repetition):
+                if repetition:
+                    self.fixture.cleanup()
+                    self.fixture = Stage3Fixture()
+                self.fixture.install_lock_barrier()
+                first = self.fixture.start_entry()
+                second = self.fixture.start_entry()
+                first.communicate(timeout=10)
+                second.communicate(timeout=10)
+                self.assertEqual(sum(code == 0 for code in (first.returncode, second.returncode)), 1)
+                events = self.fixture.event_lines()
+                pair_executions = sum(line.startswith("exec:") for line in events)
+                executions += pair_executions
+                self.assertEqual(pair_executions, 1)
+                self.assertEqual(sum(line.startswith("mount-request:ro:") for line in events), 1)
+                self.assertEqual(sum(line.startswith("mount-request:rw:") for line in events), 1)
+                self.assertEqual(sum((path / "COMPLETE").is_file() for path in self.fixture.outputs()), 1)
+                self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
+        self.assertEqual(executions, CONCURRENCY_STRESS_REPETITIONS)
+
+    def test_second_invocation_during_ro_window_cannot_restore_rw(self):
+        ready = self.fixture.root / "ro-pause-ready"
+        release = self.fixture.root / "ro-pause-release"
+        self.fixture.set_stub(
+            "#!/bin/sh\n"
+            f"options=$(awk -v mountpoint={shlex.quote(str(self.fixture.usb.resolve()))} '$2 == mountpoint {{ print $4 }}' {shlex.quote(str(self.fixture.proc / 'mounts'))})\n"
+            f"printf 'exec:%s\\n' \"$options\" >> {shlex.quote(str(self.fixture.root / 'events'))}\n"
+            f": > {shlex.quote(str(ready))}\n"
+            f"while [ ! -e {shlex.quote(str(release))} ]; do sleep 0.01; done\n"
+            "exit 0\n"
+        )
+        self.fixture.replace_stage("COMMAND_RUN_POLLS=20", "COMMAND_RUN_POLLS=500")
+        owner = self.fixture.start_entry()
+        for _ in range(500):
+            if ready.exists():
+                break
+            time.sleep(0.01)
+        self.assertTrue(ready.exists(), "owner never entered the RO execution window")
+        loser = self.fixture.run_entry()
+        self.assertNotEqual(loser.returncode, 0)
+        mount_options = (self.fixture.proc / "mounts").read_text().split()[3].split(",")
+        self.assertIn("ro", mount_options)
+        self.assertNotIn("rw", mount_options)
+        before_release = self.fixture.event_lines()
+        self.assertEqual(sum(line.startswith("mount-request:ro:") for line in before_release), 1)
+        self.assertEqual(sum(line.startswith("mount-request:rw:") for line in before_release), 0)
+        self.assertEqual(sum(line.startswith("exec:") for line in before_release), 1)
+        release.touch()
+        owner_stdout, owner_stderr = owner.communicate(timeout=10)
+        self.assertEqual(owner.returncode, 0, owner_stderr or owner_stdout)
+        events = self.fixture.event_lines()
+        self.assertEqual(sum(line.startswith("mount-request:ro:") for line in events), 1)
+        self.assertEqual(sum(line.startswith("mount-request:rw:") for line in events), 1)
+        self.assertEqual(sum(line.startswith("exec:") for line in events), 1)
+        self.assertEqual(sum((path / "COMPLETE").is_file() for path in self.fixture.outputs()), 1)
+        self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
+
+    def test_existing_and_malformed_locks_fail_before_marker_or_actions(self):
+        for lock_type in ("directory", "file", "symlink"):
+            with self.subTest(lock_type=lock_type):
+                self.fixture.cleanup()
+                self.fixture = Stage3Fixture()
+                lock = self.fixture.usb / LOCK_NAME
+                if lock_type == "directory":
+                    lock.mkdir()
+                elif lock_type == "file":
+                    lock.write_text("not a lock directory\n")
+                else:
+                    lock.symlink_to("ARM_STAGE3_ARM_EXECUTION_PROBE.example")
+                result = self.fixture.run_entry()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertTrue((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").is_file())
+                self.assertEqual(self.fixture.outputs(), [])
+                self.assertEqual(self.fixture.event_lines(), [])
+
+    def test_lock_creation_error_and_false_success_fail_closed(self):
+        real_mkdir = shutil.which("mkdir")
+        assert real_mkdir
+        for behavior in ("error", "false-success"):
+            with self.subTest(behavior=behavior):
+                self.fixture.cleanup()
+                self.fixture = Stage3Fixture()
+                self.fixture.write_command(
+                    "mkdir",
+                    f"#!{sys.executable}\n"
+                    "import os, sys\n"
+                    f"if sys.argv[1:] == ['./{LOCK_NAME}']:\n"
+                    + ("    raise SystemExit(5)\n" if behavior == "error" else "    raise SystemExit(0)\n")
+                    + f"os.execv({real_mkdir!r}, [{real_mkdir!r}, *sys.argv[1:]])\n",
+                )
+                result = self.fixture.run_entry()
+                self.assertNotEqual(result.returncode, 0)
+                self.assertTrue((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").is_file())
+                self.assertFalse((self.fixture.usb / LOCK_NAME).exists())
+                self.assertEqual(self.fixture.outputs(), [])
+                self.assertEqual(self.fixture.event_lines(), [])
 
     def test_ro_remount_failures_and_false_success_do_not_execute(self):
         for action in ("fail", "false", "change-fail"):
@@ -519,15 +685,17 @@ class Stage3Tests(unittest.TestCase):
                 result = self.fixture.run_entry()
                 self.assertNotEqual(result.returncode, 0)
                 self.assertFalse((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").exists())
+                self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
                 events = (self.fixture.root / "events").read_text()
                 self.assertNotIn("exec:", events)
                 self.assert_no_complete()
 
-    def test_missing_mount_command_fails_before_marker_consumption(self):
+    def test_missing_mount_command_fails_after_one_shot_consumption(self):
         (self.fixture.bin / "mount").unlink()
         result = self.fixture.run_entry()
         self.assertNotEqual(result.returncode, 0)
-        self.assertTrue((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").is_file())
+        self.assertFalse((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").exists())
+        self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
         self.assert_no_complete()
 
     def test_initial_mount_options_must_be_rw_dirsync_and_executable(self):
@@ -544,7 +712,8 @@ class Stage3Tests(unittest.TestCase):
                 current = current.replace("rw,dirsync", replacement)
                 mounts.write_text(current)
                 self.assertNotEqual(self.fixture.run_entry().returncode, 0)
-                self.assertTrue((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").is_file())
+                self.assertFalse((self.fixture.usb / "ARM_STAGE3_ARM_EXECUTION_PROBE").exists())
+                self.assertTrue((self.fixture.usb / LOCK_NAME).is_dir())
                 self.assert_no_complete()
 
     def test_mount_identity_change_and_usb_removal_are_fatal(self):
@@ -598,6 +767,7 @@ class Stage3Tests(unittest.TestCase):
     def test_production_source_and_payload_policy(self):
         source = (SOURCE_DIR / "probe.c").read_text()
         stage = (PAYLOAD_DIR / "stage3_arm_probe.sh").read_text()
+        entry = (PAYLOAD_DIR / "gemn_auto.sh").read_text()
         forbidden_apis = (
             "system(", "popen(", "fork(", "exec", "socket(", "connect(",
             "mount(", "reboot(", "ptrace(", "kill(", "ioctl(", "open(",
@@ -618,6 +788,35 @@ class Stage3Tests(unittest.TestCase):
         self.assertNotIn("probe.stderr.txt", stage)
         self.assertEqual(stage.count('-o remount,ro "$USB_DEVICE" "$ANCHOR_DISPLAY"'), 1)
         self.assertEqual(stage.count('-o remount,rw "$USB_DEVICE" "$ANCHOR_DISPLAY"'), 1)
+        self.assertEqual(stage.count('mkdir "$LOCK_PATH"'), 1)
+        self.assertNotIn('rmdir "$LOCK_PATH"', stage)
+        self.assertNotIn('rm -rf "$LOCK_PATH"', stage)
+        self.assertNotIn("ARM_STAGE3_ARM_EXECUTION_PROBE", entry)
+        ordered_fragments = (
+            'USB_ROOT=$(/bin/sh "$GUARD" .)',
+            'if mkdir "$LOCK_PATH" 2>/dev/null; then',
+            'require_lock_owner && [ -f "$ARM_MARKER" ]',
+            'rm -f "$ARM_MARKER"',
+            'BASE=stage3-arm-probe',
+            '\nwrite_status INCOMPLETE || exit 1\n',
+            'run_bounded "$MOUNT_COMMAND" -o remount,ro',
+            'HASH_OUTPUT=$(sha256sum "$BINARY"',
+            'run_bounded "$BINARY" >/dev/null',
+            'run_bounded "$MOUNT_COMMAND" -o remount,rw',
+            'commit_regular_file "$COMPLETE_TEMP" ./COMPLETE',
+        )
+        positions = [stage.index(fragment) for fragment in ordered_fragments]
+        self.assertEqual(positions, sorted(positions))
+        self.assertIn(
+            'require_lock_owner || finish_incomplete\n'
+            'run_bounded "$MOUNT_COMMAND" -o remount,ro',
+            stage,
+        )
+        self.assertIn(
+            'require_lock_owner || leave_readonly_incomplete\n'
+            'run_bounded "$MOUNT_COMMAND" -o remount,rw',
+            stage,
+        )
 
 
 if __name__ == "__main__":

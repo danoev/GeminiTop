@@ -46,11 +46,39 @@ GUARD=./mount_guard.sh
 [ -f "$GUARD" ] && [ ! -L "$GUARD" ] || exit 1
 USB_ROOT=$(/bin/sh "$GUARD" .) || exit 1
 [ "$USB_ROOT" = "$ANCHOR_DISPLAY" ] || exit 1
+
+LOCK_PATH=./.stage3-arm-probe.lock
+LOCK_DISPLAY="$ANCHOR_DISPLAY/.stage3-arm-probe.lock"
+LOCK_OWNED=0
+if mkdir "$LOCK_PATH" 2>/dev/null; then
+    LOCK_OWNED=1
+else
+    printf '%s\n' "w176-stage3: one-shot lock unavailable; prepare USB off-target before a new attempt" >&2
+    exit 1
+fi
+require_lock_owner() {
+    [ "$LOCK_OWNED" -eq 1 ] &&
+        [ -d "$LOCK_DISPLAY" ] &&
+        [ ! -L "$LOCK_DISPLAY" ]
+}
+require_lock_owner || {
+    printf '%s\n' "w176-stage3: atomic lock ownership could not be verified" >&2
+    exit 1
+}
+
 ARM_MARKER=./ARM_STAGE3_ARM_EXECUTION_PROBE
-[ -f "$ARM_MARKER" ] && [ ! -L "$ARM_MARKER" ] || {
+require_lock_owner && [ -f "$ARM_MARKER" ] && [ ! -L "$ARM_MARKER" ] || {
     printf '%s\n' "w176-stage3: not armed; reviewed marker is absent or invalid" >&2
     exit 1
 }
+rm -f "$ARM_MARKER" || {
+    printf '%s\n' "w176-stage3: cannot consume reviewed marker" >&2
+    exit 1
+}
+if [ -e "$ARM_MARKER" ] || [ -L "$ARM_MARKER" ]; then
+    printf '%s\n' "w176-stage3: reviewed marker remains after consumption" >&2
+    exit 1
+fi
 
 BASE=stage3-arm-probe
 OUT_NAME=
@@ -378,7 +406,6 @@ leave_readonly_incomplete() {
 }
 
 BINARY=../arm_probe
-ARM_MARKER=../ARM_STAGE3_ARM_EXECUTION_PROBE
 if [ ! -f "$BINARY" ] || [ -L "$BINARY" ] || [ ! -x "$BINARY" ]; then
     record_failure "binary_absent_or_invalid"
     finish_incomplete
@@ -390,17 +417,8 @@ PRELIMINARY_BINARY_SIZE=$(stat -L -c '%s' "$BINARY" 2>/dev/null) || {
 case "$PRELIMINARY_BINARY_SIZE" in ''|*[!0-9]*) record_failure "binary_size_invalid"; finish_incomplete ;; esac
 [ "$PRELIMINARY_BINARY_SIZE" -le "$MAX_BINARY_SIZE" ] || { record_failure "binary_oversized"; finish_incomplete; }
 
-if [ ! -f "$ARM_MARKER" ] || [ -L "$ARM_MARKER" ]; then
-    record_failure "arming_marker_absent_or_invalid"
-    finish_incomplete
-fi
-rm -f "$ARM_MARKER" || { record_failure "arming_marker_consume_failed"; finish_incomplete; }
-if [ -e "$ARM_MARKER" ] || [ -L "$ARM_MARKER" ]; then
-    record_failure "arming_marker_still_present"
-    finish_incomplete
-fi
-
 RO_REMOUNT_STATUS=0
+require_lock_owner || finish_incomplete
 run_bounded "$MOUNT_COMMAND" -o remount,ro "$USB_DEVICE" "$ANCHOR_DISPLAY" >/dev/null 2>&1 || RO_REMOUNT_STATUS=$?
 if [ "$RO_REMOUNT_STATUS" -eq 125 ] && [ "$RUNNER_FATAL" -ne 0 ]; then
     leave_readonly_incomplete
@@ -421,6 +439,7 @@ BINARY_SHA256=
 EXEC_STATUS=125
 EXECUTION_ATTEMPTED=0
 
+require_lock_owner || leave_readonly_incomplete
 if [ -z "$DEFERRED_ERROR" ] &&
     { [ ! -f "$BINARY" ] || [ -L "$BINARY" ] || [ ! -x "$BINARY" ]; }
 then
@@ -458,6 +477,7 @@ if [ -z "$DEFERRED_ERROR" ] && [ "$BINARY_SHA256" != "$EXPECTED_BINARY_SHA256" ]
 fi
 
 if [ -z "$DEFERRED_ERROR" ]; then
+    require_lock_owner || leave_readonly_incomplete
     EXECUTION_ATTEMPTED=1
     EXEC_STATUS=0
     run_bounded "$BINARY" >/dev/null 2>&1 || EXEC_STATUS=$?
@@ -470,6 +490,7 @@ if [ -z "$DEFERRED_ERROR" ]; then
 fi
 
 RW_REMOUNT_STATUS=0
+require_lock_owner || leave_readonly_incomplete
 run_bounded "$MOUNT_COMMAND" -o remount,rw "$USB_DEVICE" "$ANCHOR_DISPLAY" >/dev/null 2>&1 || RW_REMOUNT_STATUS=$?
 if [ "$RW_REMOUNT_STATUS" -eq 125 ] && [ "$RUNNER_FATAL" -ne 0 ]; then
     leave_readonly_incomplete
@@ -504,6 +525,7 @@ printf '%s\n' \
     "usb.initial_options=$INITIAL_MOUNT_OPTIONS" \
     "usb.readonly_window.verified=PASS" \
     "usb.readwrite_restore.verified=PASS" \
+    "one_shot.lock=retained" \
     "arming_marker.consumed=PASS" > "$CAPABILITIES_TEMP" || finish_incomplete
 commit_regular_file "$CAPABILITIES_TEMP" ./CAPABILITIES.txt || finish_incomplete
 
