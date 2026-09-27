@@ -7,7 +7,8 @@
   "sources": [
     "owner-reported on-screen version strings",
     "successful physical Stage-1 capture produced by commit 5f85cafd0416b0511cc4570b6e280613112d6243; sanitised derived facts only",
-    "successful physical Stage-2 capture produced by commit 059db6e6aabdd0599967e413bd28c429ab0f0458; sanitised derived facts only"
+    "successful physical Stage-2 capture produced by commit 059db6e6aabdd0599967e413bd28c429ab0f0458; sanitised derived facts only",
+    "operator-returned successful physical Stage-3 transaction from reviewed commit ee6ea0f7d0ef028c406c324e9f43f078d5f8de3f on 2026-09-27; original FAT media/files not inspected in the recording session"
   ],
   "facts": {
     "vehicle_family": {"state": "CONFIRMED", "value": "Mercedes W176 / NTG5*1"},
@@ -31,8 +32,8 @@
     "usb_shell_payload_execution": {"state": "CONFIRMED", "value": "root-owned stock autorun executed the reviewed Stage-1 shell payload from removable USB"},
     "usb_handler_hash": {"state": "CONFIRMED", "value": "9ed1057f86c0388442d2db796d6dc3dec33f460aabd084dfa90d7024d309d1f6 (/usr/local/bin/Usbnet_ncm.sh)"},
     "launcher": {"state": "CONFIRMED", "value": "/application/bin/Launcher, 92416 bytes"},
-    "installed_userspace_abi": {"state": "CONFIRMED", "value": "ELF32 little-endian ARM EABI5 hard-float; interpreter /lib/ld-linux-armhf.so.3 -> ld-2.30.so; installed Launcher version needs GLIBC_2.4 and GCC_3.5; custom-code loadability remains UNKNOWN"},
-    "custom_arm_elf_loadability": {"state": "UNKNOWN", "value": null},
+    "installed_userspace_abi": {"state": "CONFIRMED", "value": "ELF32 little-endian ARM EABI5 hard-float; interpreter /lib/ld-linux-armhf.so.3 -> ld-2.30.so; installed Launcher version needs GLIBC_2.4 and GCC_3.5; the reviewed GLIBC_2.4-only project probe executed natively and returned zero"},
+    "custom_arm_elf_loadability": {"state": "CONFIRMED", "value": "Reviewed 5556-byte ARMHF ELF from commit ee6ea0f7d0ef028c406c324e9f43f078d5f8de3f, SHA-256 662a2457a818624c63428c9bab0a62ff3c90f9941c3b92761c4f646ee0477789, executed natively from removable USB and returned exit status 0 on 2026-09-27; operator-supplied physical result"},
     "firmware_authentication": {"state": "UNKNOWN", "value": null},
     "verified_recovery_path": {"state": "UNKNOWN", "value": null},
     "application_names": {"state": "CONFIRMED", "value": ["Launcher", "aa_manager_service", "apple_carplay_server", "networkmanager"]},

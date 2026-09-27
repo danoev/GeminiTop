@@ -8,6 +8,12 @@
 
 This repository is not currently a plug-and-play Mercedes GeminiTop release.
 
+Stages 1 and 2 established the installed W176 platform and ABI. On 2026-09-27,
+the exact independently reviewed Stage-3 ARMHF probe also executed natively
+from removable USB and returned zero. Native USB execution is physically proven
+at that narrow boundary; persistent installation and the full GeminiTop runtime
+remain separate future milestones.
+
 The immediate goal is to understand the RoadTop hardware and software platform safely, establish the exact characteristics of the installed Mercedes unit, and then build a target-aware compatibility layer rather than assuming that the original Audi GeminiTop target and the Mercedes hardware are interchangeable.
 
 The primary development target is currently a RoadTop Linux screen installed in a Mercedes-Benz W176 A45 AMG using the factory NTG5*1 system.
@@ -93,9 +99,15 @@ Those characteristics are treated as target evidence rather than universal const
 
 ## Current engineering workstreams
 
-### 1. RoadTop platform identification
+### 1. RoadTop platform identification and patchability
 
-Before enabling the GeminiTop runtime on the Mercedes target, the installed unit is being characterised using a minimal USB Stage-1 probe.
+Before enabling the GeminiTop runtime on the Mercedes target, the installed
+unit was characterised through three independently reviewed steps:
+
+- Stage 1 established the hardware/runtime baseline with a minimal shell probe;
+- Stage 2 captured selected installed platform and ABI evidence;
+- Stage 3 proved that the exact project-built inert ARMHF ELF can execute
+  natively from removable USB and return normally.
 
 The probe is intended to establish things such as:
 
@@ -108,7 +120,8 @@ The probe is intended to establish things such as:
 - stock USB autorun behaviour;
 - running services and application structure.
 
-The first probe is deliberately observation-only.
+The first two probes were deliberately observation-only. Stage 3 added only a
+one-shot inert native execution proof and wrote results to validated USB.
 
 It does **not**:
 
@@ -135,6 +148,9 @@ See:
 
 ```text
 tools/w176-probe/
+tools/w176-stage2/
+tools/w176-stage3-arm-probe/
+docs/platform/w176-stage3-physical-evidence.md
 ```
 
 ---
@@ -358,7 +374,9 @@ apps/
     Original GeminiTop runtime and applications
 ```
 
-The original launcher/runtime remains part of the repository, but active Mercedes runtime support is not yet considered established.
+The original launcher/runtime remains part of the repository, but active
+Mercedes runtime support and persistent installation are not yet considered
+established.
 
 ---
 
@@ -402,36 +420,28 @@ brew install squashfs
 
 ## Current roadmap
 
-The immediate development sequence is:
+The completed evidence sequence and next guarded steps are:
 
 ```text
-Mercedes firmware reference
-            +
-       Stage-1 probe
-            |
-            v
-   identify real W176 target
-            |
-            v
-       Stage-2 capture
-            |
-      +-----+-----+
-      |           |
-      v           v
-   AUDIO      ILLUMINATION
-      |           |
-      +-----+-----+
-            |
-            v
-   Mercedes runtime layer
-            |
-            v
- future GeminiTop deployment
+Stage 1 — shell execution and target baseline       COMPLETE
+Stage 2 — installed platform and ABI capture        COMPLETE
+Stage 3 — project ARMHF native USB execution        COMPLETE
+                         |
+             +-----------+-----------+
+             v                       v
+Stage 4A — CAN/MCU topology   Stage 4B — residency proof
+        separate review              separate review
+             +-----------+-----------+
+                         v
+            Mercedes compatibility layer
+                         |
+                         v
+              future GeminiTop runtime
 ```
 
-The first major milestone is therefore not a new launcher.
-
-It is a trustworthy description of the actual Mercedes RoadTop hardware.
+The next physical candidates remain metadata-only topology discovery and a
+separate minimal persistent-residency proof. Neither is authorised merely by
+the Stage-3 result.
 
 ---
 

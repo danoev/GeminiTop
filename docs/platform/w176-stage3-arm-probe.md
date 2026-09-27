@@ -1,10 +1,10 @@
 # W176 Stage-3 ARM loadability probe review state
 
-Status: the reproducible host build, static ABI gate, inert payload, and host
-adversarial tests are complete. **No physical GO is declared.** Custom ARM ELF
-loadability on the installed RoadTop remains UNKNOWN until an independent Work
-safety review approves the exact frozen commit, exact binary, and one-shot
-payload.
+Status: COMPLETE. Following independent review of the frozen payload, the
+operator ran the one-shot probe on 2026-09-27. The exact reviewed ARMHF ELF
+executed natively on the installed RoadTop and returned zero. See
+`w176-stage3-physical-evidence.md` for the returned transaction and provenance
+limitation.
 
 ## Host result
 
@@ -22,6 +22,24 @@ payload.
 - The 15-line C source performs only one libc `write` of a fixed marker and
   returns according to that write's result.
 - The target binary has not been executed or emulated.
+
+The preceding bullet describes the host build/static-review phase. It is kept
+as historical context. The later physical milestone is recorded below.
+
+## Physical result — 2026-09-27
+
+Operator-supplied physical evidence ties the successful run to commit
+`ee6ea0f7d0ef028c406c324e9f43f078d5f8de3f` and the exact 5,556-byte binary
+SHA-256
+`662a2457a818624c63428c9bab0a62ff3c90f9941c3b92761c4f646ee0477789`.
+The returned transaction reported COMPLETE, zero mandatory failures, executed
+once, exit status zero, PASS, verified RO execution window, verified RW
+restoration, consumed marker, and retained one-shot lock.
+
+This session did not inspect the original FAT media or raw result files. The
+reviewed wrapper's regular non-symlink checks support the operator-returned
+valid transaction, but copied files cannot independently reproduce original
+FAT object metadata.
 
 Full provenance, flags, import classification, payload design, and limitations
 are documented in `tools/w176-stage3-arm-probe/README.md`.
@@ -90,12 +108,12 @@ physical USB removal is the documented recovery. No physical GO is declared.
   atomic persistent-directory-lock regression tests serialize the full window.
 - **CONFIRMED:** real disposable Linux FAT remount tests establish the stated
   normal-writer immutability and retained-writable-handle fail-closed behavior.
-- **UNKNOWN:** whether the installed kernel, loader, and libc will load and
-  return from this custom ELF.
-- **UNKNOWN:** whether installed BusyBox v1.29.3 accepts the exact narrow
-  remount syntax and reports the expected `/proc/mounts` transitions.
-- **NOT AUTHORISED:** physical use until a new independent safety review returns
-  GO for only the exact frozen commit, binary hash, payload, and one attempt.
+- **CONFIRMED:** the installed kernel, loader, and libc loaded the exact reviewed
+  custom ELF from removable USB and it returned exit status zero.
+- **CONFIRMED:** for this physical transaction, the wrapper reported that the
+  installed remount path established RO, then restored and verified RW.
+- **COMPLETE:** the reviewed one-shot Stage-3 physical milestone. This does not
+  authorise broader runtime, persistence, CAN/MCU, or firmware actions.
 
 This work does not prove RoadTop patching, ABI suitability for a feature
 binary, library shadowing, persistence, application replacement, or firmware

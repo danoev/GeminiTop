@@ -152,3 +152,8 @@ missing” to “ready for fresh independent code-safety review”; it does not 
 physical evidence. The binary has never been executed or emulated, no vehicle
 action has occurred, and custom ARM loadability remains UNKNOWN. See
 `w176-stage3-arm-probe.md`.
+
+The preceding paragraph records the state at the end of Stage-2. On 2026-09-27
+the later reviewed Stage-3 payload completed its physical run successfully.
+That subsequent operator-supplied evidence is recorded separately in
+`w176-stage3-physical-evidence.md`; it does not alter the Stage-2 capture.

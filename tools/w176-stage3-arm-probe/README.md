@@ -1,9 +1,9 @@
 # W176 Stage-3 inert ARMHF loadability probe
 
-Status: host build and static review material only. This directory does not
-authorise a physical run. The installed RoadTop has not executed this binary,
-and custom ARM executable loadability remains UNKNOWN pending a fresh
-independent safety review and a separately authorised one-shot test.
+Status: frozen Stage-3 milestone. After independent review, the exact committed
+binary completed its separately authorised physical one-shot run on 2026-09-27
+and returned zero. This directory does not authorise reuse or any broader
+native-code action; see `docs/platform/w176-stage3-physical-evidence.md`.
 
 ## Question and safety boundary
 

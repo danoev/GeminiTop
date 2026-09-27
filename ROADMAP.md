@@ -42,31 +42,35 @@ Phase 0 — Reference research
                |
                v
 Phase 1 — Safe Stage-1 target probe
-            IN PROGRESS
+            COMPLETE
                |
                v
 Phase 2 — Installed v2.0.61 target capture
-            BLOCKED
+            COMPLETE
+               |
+               v
+Phase 3 — Native ARMHF USB execution
+            COMPLETE
                |
         +------+------+
         |             |
         v             v
-Phase 3A          Phase 3B
-Audio / MOST      Illumination
-  research          research
+Phase 4A          Phase 4B
+CAN/MCU topology  Residency proof
+  PLANNED           PLANNED
         |             |
         +------+------+
                |
                v
-Phase 4 — Mercedes compatibility layer
+Phase 5 — Mercedes compatibility layer
             PLANNED
                |
                v
-Phase 5 — Safe GeminiTop runtime
+Phase 6 — Safe GeminiTop runtime
             PLANNED
                |
                v
-Phase 6 — Additional Mercedes targets
+Phase 7 — Additional Mercedes targets
             EXPLORATORY
 ```
 
@@ -105,7 +109,7 @@ The Mercedes v2.0.65 firmware remains **REFERENCE ONLY** and does not prove comp
 
 # Phase 1 — Safe Stage-1 target probe
 
-**Status: IN PROGRESS**
+**Status: COMPLETE**
 
 Goal:
 
@@ -141,11 +145,14 @@ Exit criterion:
 
 A physical Stage-1 run must complete with a valid `COMPLETE` marker and produce a reviewable capture from the installed unit.
 
+The successful physical capture and sanitised derived evidence are recorded in
+`docs/platform/w176-stage1-evidence.md`.
+
 ---
 
 # Phase 2 — Installed v2.0.61 target capture
 
-**Status: BLOCKED on successful Stage-1**
+**Status: COMPLETE**
 
 Goal:
 
@@ -171,9 +178,32 @@ Expected output:
 - selected static files required for offline comparison;
 - no arbitrary userdata or private NVM collection.
 
+The selected physical capture completed successfully and is recorded in
+`docs/platform/w176-stage2-evidence.md`.
+
 ---
 
-# Phase 3A — Audio / CarPlay / MOST
+# Phase 3 — Native ARMHF USB execution
+
+**Status: COMPLETE**
+
+Goal:
+
+Prove that the installed kernel, loader, and libc can load one exact,
+independently reviewed project-built ARMHF ELF from removable USB and return
+normally.
+
+On 2026-09-27 the exact 5,556-byte Stage-3 probe from reviewed commit
+`ee6ea0f7d0ef028c406c324e9f43f078d5f8de3f`, SHA-256
+`662a2457a818624c63428c9bab0a62ff3c90f9941c3b92761c4f646ee0477789`,
+executed once and returned zero. This proves the narrow native-execution
+boundary, not arbitrary compatibility or persistence.
+
+See `docs/platform/w176-stage3-physical-evidence.md`.
+
+---
+
+# Parallel workstream — Audio / CarPlay / MOST
 
 **Status: EXPLORATORY**
 
@@ -206,7 +236,7 @@ No donor hardware purchase or irreversible modification should be based on this 
 
 ---
 
-# Phase 3B — Mercedes illumination / day-night behaviour
+# Parallel workstream — Mercedes illumination / day-night behaviour
 
 **Status: EXPLORATORY**
 
@@ -234,7 +264,7 @@ Research goals:
 
 ---
 
-# Phase 3C — MCU / vehicle interface
+# Phase 4A — CAN / MCU topology discovery
 
 **Status: PLANNED**
 
@@ -258,7 +288,7 @@ Do not transmit CAN or send MCU commands merely to discover the protocol.
 
 ---
 
-# Phase 4 — Mercedes compatibility layer
+# Phase 5 — Mercedes compatibility layer
 
 **Status: PLANNED**
 
@@ -281,7 +311,7 @@ The compatibility layer should prefer explicit capability detection over assumpt
 
 ---
 
-# Phase 5 — Safe GeminiTop runtime
+# Phase 6 — Safe GeminiTop runtime
 
 **Status: PLANNED**
 
@@ -304,7 +334,7 @@ Persistent installation is not an initial goal.
 
 ---
 
-# Phase 6 — Additional Mercedes targets
+# Phase 7 — Additional Mercedes targets
 
 **Status: EXPLORATORY**
 
@@ -384,9 +414,12 @@ Keep:
 
 The next meaningful milestone is:
 
-> **Obtain and review a successful Stage-1 capture from the installed W176 RoadTop unit.**
+> **Prepare Stage-4A topology and Stage-4B residency candidates as separate,
+> independently reviewed payloads; review Stage-4A first.**
 
-Until that happens, the installed hardware identity and compatibility assumptions should remain conservative.
+Stage-3 does not authorise either physical action. Installed topology,
+persistent-storage safety, and compatibility assumptions remain conservative
+until each next payload passes its own review and physical evidence gate.
 
 ---
 

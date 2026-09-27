@@ -27,18 +27,25 @@ maintained in `docs/platform/w176-patchability.md`.
 - CONFIRMED: the later host-only Stage-3 build uses a pinned official Arm GNU
   A-profile 9.2-2019.12 AArch64-Linux-hosted toolchain and pinned Linux/arm64
   container; two clean builds of the inert custom ELF are byte-identical and
-  the static ABI/import/source gate passes. The ARM ELF has not run.
+  the static ABI/import/source gate passes.
 - CONFIRMED: the first Stage-3 mutable-snapshot wrapper was HIGH/NO-GO after a
   host race produced false COMPLETE. Its read-only-window replacement passes
   disposable Linux FAT semantics and host-stub adversarial tests. Installed
-  BusyBox remount behavior and physical custom-ELF loadability remain UNKNOWN.
+  BusyBox remount behavior was then exercised by the final reviewed physical
+  transaction; the earlier wrapper remains historical NO-GO.
 - CONFIRMED: the first read-only-window wrapper was also HIGH/NO-GO because
   overlapping invocations could both execute and could break one another's RO
-  interval. The current host-only revision atomically acquires a persistent FAT
+  interval. The final revision atomically acquires a persistent FAT
   directory lock before marker handling and serializes the entire RO/hash/
   execute/RW/COMPLETE sequence. Host overlap, paused-RO, reinvocation, malformed
-  lock, and 50-pair real FAT concurrency tests pass; physical use remains
-  unapproved.
+  lock, and 50-pair real FAT concurrency tests passed before physical use.
+- CONFIRMED: on 2026-09-27 the operator returned a successful Stage-3 physical
+  transaction from reviewed commit `ee6ea0f7d0ef028c406c324e9f43f078d5f8de3f`.
+  The exact 5,556-byte ARMHF ELF with SHA-256
+  `662a2457a818624c63428c9bab0a62ff3c90f9941c3b92761c4f646ee0477789`
+  executed once and returned zero; RO/RW window verification passed and the
+  one-shot lock remained. Original FAT files were not inspected by the session
+  recording this operator-supplied evidence.
 - REFERENCE ONLY: the Benz v2.0.65 archive contains a Gemini container, a
   validated Linux 4.9.217 uImage, and SquashFS images. Separately, the original
   Audi reconnaissance capture showed a Gemini/ARMv7 runtime and stock
@@ -46,7 +53,7 @@ maintained in `docs/platform/w176-patchability.md`.
 - INFERENCE: the installed v2.0.61 and reference v2.0.65 share a substantial
   S7-QA/Gemini platform topology. Matching names, sizes, and kernel release do
   not establish byte identity or update compatibility.
-- UNKNOWN: commercial board identity, custom ARM ELF physical loadability, complete
+- UNKNOWN: commercial board identity, compatibility of arbitrary ARM ELFs, complete
   userspace compatibility beyond the captured boundary, update compatibility,
   framebuffer pixel semantics beyond the captured channel metadata, and
   unobserved feature flags.
@@ -76,12 +83,10 @@ No audio-routing patch or MCU command belongs in the common-platform phase.
 No CAN transmission, MCU command, illumination patch, or forced day/night value
 is authorized in this phase.
 
-## Still blocked after the host-only Stage-3 build
+## Still blocked after physical Stage-3 completion
 
-- using the redesigned unarmed Stage-3 payload physically until a fresh
-  independent safety review verifies the exact frozen commit, binary SHA-256,
-  atomic persistent lock, overlap/paused-RO behavior, RO/RW mount-state
-  transition, one-shot marker, wrapper, and tests;
+- treating the narrow Stage-3 success as approval for arbitrary native code,
+  persistent installation, boot persistence, or stock-process modification;
 - approving rendering solely from dimensions and 32-bpp metadata;
 - treating a matching partition name/size as firmware byte compatibility;
 - identifying the unit as QD507 (or any other marketing board identifier);
@@ -90,8 +95,7 @@ is authorized in this phase.
 - beginning audio, MOST, illumination, CAN, or MCU changes that depend on target
   identity.
 
-Stage-2 completed successfully after its separate independent GO. Its payload
-remains a frozen historical evidence point. The Stage-3 executable/payload now
-exists for independent review only: it is unarmed, has never been run or
-emulated, and has no physical approval. See
-`docs/platform/w176-stage3-arm-probe.md`.
+Stages 1, 2, and 3 are frozen historical evidence points. Stage-3 native USB
+execution is physically confirmed for the exact reviewed binary; it does not
+approve later payloads. See `docs/platform/w176-stage3-arm-probe.md` and
+`docs/platform/w176-stage3-physical-evidence.md`.
