@@ -108,7 +108,7 @@ capture_text() {
     SIZE=$(stat -L -c '%s' "$TEMP" 2>/dev/null) || return 1
     [ "$SIZE" -le "$LIMIT" ] || { rm -f "$TEMP"; record_failure "$LABEL:limit_exceeded"; return 1; }
     commit_file "$TEMP" "$DEST" || { record_failure "$LABEL:commit_failed"; return 1; }
-    DIGEST=$(sha256sum "$DEST" | awk '{print $1}') || return 1
+    DIGEST=$(sha256sum "$DEST" | awk '{print $1}') || { record_failure "$LABEL:hash_failed"; return 1; }
     printf '%s  %s\n' "$DIGEST" "$DEST" >> "$CHECKSUM_WORK" || record_failure "checksums_write"
     printf '%s|TEXT|OK|%s|%s|%s\n' "$LABEL" "$SOURCE" "$SIZE" "$DEST" >> "$INVENTORY_WORK" || record_failure "inventory_write"
 }
@@ -248,7 +248,7 @@ snapshot_library() {
     TOTAL_LIBRARY_BYTES=$((TOTAL_LIBRARY_BYTES + SIZE)); [ "$TOTAL_LIBRARY_BYTES" -le "$MAX_TOTAL_LIBRARY_BYTES" ] || { record_failure "library_total_limit"; return 1; }
     commit_file "$TEMP" "$DEST" || { record_failure "$LABEL:commit_failed"; return 1; }
     rm -f "$RESULT"
-    DIGEST=$(sha256sum "$DEST" | awk '{print $1}') || return 1
+    DIGEST=$(sha256sum "$DEST" | awk '{print $1}') || { record_failure "$LABEL:hash_failed"; return 1; }
     printf '%s  %s\n' "$DIGEST" "$DEST" >> "$CHECKSUM_WORK"
     printf '%s|COPY|OK|%s|%s|%s\n' "$LABEL" "$SOURCE" "$SIZE" "$DEST" >> "$INVENTORY_WORK"
 }
@@ -314,13 +314,19 @@ done
 OUTPUT_KIB=$(du -sk . 2>/dev/null | awk '{print $1}') || record_failure "output_size_unavailable"
 case "$OUTPUT_KIB" in ''|*[!0-9]*) record_failure "output_size_invalid" ;; *) [ "$OUTPUT_KIB" -le "$MAX_TOTAL_OUTPUT_KIB" ] || record_failure "output_limit" ;; esac
 
+for REQUIRED_OUTPUT in CAPABILITIES.txt SUMMARY.txt network/proc-net-dev.txt network/interfaces.txt devices/device-nodes.txt processes/owners.txt files/libappframework.so.1.0.0 files/libappmcucommunication.so.1.0.0; do
+    is_regular_nonsymlink "$REQUIRED_OUTPUT" || record_failure "required_output_invalid:$REQUIRED_OUTPUT"
+done
+
 commit_file "$INVENTORY_WORK" capture-inventory.txt || record_failure "inventory_commit"
 commit_file "$CHECKSUM_WORK" checksums.sha256 || record_failure "checksums_commit"
 commit_file "$OPTIONAL_WORK" OPTIONAL.txt || record_failure "optional_commit"
 commit_file "$ERROR_WORK" ERRORS.txt || { FAILURES=$((FAILURES + 1)); }
 [ "$FAILURES" -eq 0 ] || { status_write INCOMPLETE || true; exit 1; }
 status_write COMPLETE || exit 1
-for REQUIRED in STATUS.txt ERRORS.txt OPTIONAL.txt CAPABILITIES.txt SUMMARY.txt capture-inventory.txt checksums.sha256 network/proc-net-dev.txt network/interfaces.txt devices/device-nodes.txt processes/owners.txt files/libappframework.so.1.0.0 files/libappmcucommunication.so.1.0.0; do is_regular_nonsymlink "$REQUIRED" || exit 1; done
+for REQUIRED in STATUS.txt ERRORS.txt OPTIONAL.txt CAPABILITIES.txt SUMMARY.txt capture-inventory.txt checksums.sha256 network/proc-net-dev.txt network/interfaces.txt devices/device-nodes.txt processes/owners.txt files/libappframework.so.1.0.0 files/libappmcucommunication.so.1.0.0; do
+    is_regular_nonsymlink "$REQUIRED" || { status_write INCOMPLETE || true; exit 1; }
+done
 [ ! -s ERRORS.txt ] || { status_write INCOMPLETE || true; exit 1; }
 awk -F= '
     $1 == "status" { status=$2; sc++ }
