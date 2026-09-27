@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "id": "audi-reference",
+  "label": "Original GeminiTop Audi reference unit",
+  "profile_kind": "reference",
+  "compatibility_claim": false,
+  "sources": ["README.md", "recon.txt"],
+  "facts": {
+    "vehicle_family": {"state": "REFERENCE_ONLY", "value": "Audi"},
+    "board_identifier": {"state": "UNKNOWN", "value": null},
+    "hardware_identity": {"state": "REFERENCE_ONLY", "value": "GEMINI"},
+    "kernel_release": {"state": "REFERENCE_ONLY", "value": "4.9.217"},
+    "nvm_bytes": {"state": "REFERENCE_ONLY", "value": 8388608},
+    "framebuffer": {
+      "state": "REFERENCE_ONLY",
+      "value": {"device": "/dev/fb0", "width": 1920, "height": 720, "virtual_height": 1440, "bits_per_pixel": 32}
+    },
+    "touch": {"state": "REFERENCE_ONLY", "value": {"name": "fts_ts", "event": "event3"}},
+    "usb_mounts": {"state": "REFERENCE_ONLY", "value": ["/tmp/sp/mnt/sda1", "/tmp/sp/mnt/sdb1", "/tmp/sp/mnt/sdc1"]},
+    "application_names": {"state": "REFERENCE_ONLY", "value": ["Launcher", "apple_carplay_server", "networkmanager"]}
+  },
+  "match": {
+    "identity.hardware": "GEMINI",
+    "kernel.release": "4.9.217",
+    "mtd.nvm_bytes": 8388608,
+    "framebuffer.width": 1920,
+    "framebuffer.height": 720,
+    "framebuffer.bits_per_pixel": 32,
+    "touch.name": "fts_ts",
+    "touch.event": "event3",
+    "applications.contains": ["Launcher", "apple_carplay_server", "networkmanager"]
+  }
+}

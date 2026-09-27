@@ -26,6 +26,47 @@ htop/build/
 GEMINI_PACK/
 ISPBOOOT/
 
+# Proprietary firmware and extracted/captured target data. Commit metadata-only
+# reports (JSON/Markdown/hash manifests) under reports/ instead.
+*.zip
+*.bin
+*.BIN
+*.img
+*.squashfs
+*.sqsh
+*.ubi
+*.ubifs
+*.yaffs
+*.yaffs2
+firmware_tools/work/
+firmware_tools/extracted/
+firmware_tools/REPACKED/
+**/rootfs/
+**/spsdk/
+**/spapp/
+**/filesystem-root/
+**/extracted-filesystem/
+**/squashfs-root/
+**/squashfs-root-*/
+**/extracted_*/
+stage1-probe/
+stage1-probe-*/
+stage2-platform/
+stage2-platform-*/
+ARM_STAGE2_PLATFORM_CAPTURE
+probe-results/
+recon.txt
+nvm-capture*/
+userdata-capture*/
+user-data-capture*/
+*.nvm.capture
+*.userdata.capture
+
+# Do not commit Roadtop executables copied from firmware. Locally built ELF
+# outputs remain covered by *.elf, *.so, app build folders, and named outputs.
+firmware-elves/
+roadtop-elves/
+
 # ---- Dropbear (downloaded at build time) ----
 dropbear/dropbear-*/
 dropbear/*.tar.bz2

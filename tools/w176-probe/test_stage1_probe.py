@@ -1,0 +1,1019 @@
+from __future__ import annotations
+
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+
+SOURCE_DIR = Path(__file__).resolve().parent
+
+
+class ProbeFixture:
+    def __init__(self) -> None:
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.usb = self.root / "usb"
+        self.bin = self.root / "bin"
+        self.proc = self.root / "proc"
+        self.sys = self.root / "sys"
+        self.dev = self.root / "dev"
+        self.internal = self.root / "internal"
+        for path in (
+            self.usb,
+            self.bin,
+            self.proc / "bus/input",
+            self.sys / "block/sda",
+            self.sys / "class/graphics/fb0",
+            self.dev,
+            self.internal / "dev/input",
+            self.internal / "application/bin",
+            self.internal / "usr/local/bin",
+        ):
+            path.mkdir(parents=True, exist_ok=True)
+        self._install_test_payload()
+        self._install_commands()
+        self._write_target_data()
+        self.set_mounts(("sda1", self.usb, "vfat"))
+        self.env = {**os.environ}
+
+    def cleanup(self) -> None:
+        try:
+            self.usb.chmod(0o755)
+        except OSError:
+            pass
+        self.temp.cleanup()
+
+    def _install_test_payload(self) -> None:
+        replacements = {
+            "gemn_auto.sh": {
+                "PATH=/usr/sbin:/usr/bin:/sbin:/bin": f"PATH={shlex.quote(str(self.bin))}",
+            },
+            "mount_guard.sh": {
+                "PATH=/usr/sbin:/usr/bin:/sbin:/bin": f"PATH={shlex.quote(str(self.bin))}",
+                "MOUNTS_FILE=/proc/mounts": f"MOUNTS_FILE={shlex.quote(str(self.proc / 'mounts'))}",
+                "SYS_BLOCK_ROOT=/sys/block": f"SYS_BLOCK_ROOT={shlex.quote(str(self.sys / 'block'))}",
+                "DEV_ROOT=/dev": f"DEV_ROOT={shlex.quote(str(self.dev))}",
+                "DEVICE_TEST=-b": "DEVICE_TEST=-e",
+            },
+            "stage1_probe.sh": {
+                "PATH=/usr/sbin:/usr/bin:/sbin:/bin": f"PATH={shlex.quote(str(self.bin))}",
+                "PROC_ROOT=/proc": f"PROC_ROOT={shlex.quote(str(self.proc))}",
+                "PROCESS_ROOT=/proc": f"PROCESS_ROOT={shlex.quote(str(self.proc / 'process'))}",
+                "SYS_ROOT=/sys": f"SYS_ROOT={shlex.quote(str(self.sys))}",
+                "INTERNAL_ROOT=": f"INTERNAL_ROOT={shlex.quote(str(self.internal))}",
+                "COMMAND_POLL_INTERVAL=1": "COMMAND_POLL_INTERVAL=0.05",
+                "COMMAND_RUN_POLLS=5": "COMMAND_RUN_POLLS=10",
+                "COMMAND_TERM_POLLS=1": "COMMAND_TERM_POLLS=2",
+                "COMMAND_KILL_POLLS=1": "COMMAND_KILL_POLLS=2",
+                "SELFTEST_POLL_INTERVAL=1": "SELFTEST_POLL_INTERVAL=0.05",
+                "SELFTEST_RUN_POLLS=1": "SELFTEST_RUN_POLLS=1",
+                "SELFTEST_TERM_POLLS=1": "SELFTEST_TERM_POLLS=2",
+                "SELFTEST_KILL_POLLS=1": "SELFTEST_KILL_POLLS=2",
+                "SELFTEST_NATURAL_DELAY=10": "SELFTEST_NATURAL_DELAY=1",
+                "observe_owned_child() {": (
+                    "observe_owned_child() {\n"
+                    "    process_snapshot \"$1\" >/dev/null 2>&1 || true"
+                ),
+                "run_bounded() {": (
+                    "run_bounded() {\n"
+                    "    process_self_snapshot >/dev/null 2>&1 || true"
+                ),
+            },
+        }
+        for name, substitutions in replacements.items():
+            source = SOURCE_DIR / name
+            content = source.read_text()
+            for original, replacement in substitutions.items():
+                if content.count(original) != 1:
+                    raise AssertionError(f"unexpected production constant occurrence: {name}: {original}")
+                content = content.replace(original, replacement)
+            destination = self.usb / name
+            destination.write_text(content)
+            destination.chmod(source.stat().st_mode & 0o777)
+
+    def _install_commands(self) -> None:
+        for name in (
+            "awk",
+            "cat",
+            "cp",
+            "dirname",
+            "ls",
+            "mkdir",
+            "mv",
+            "pwd",
+            "rm",
+            "sed",
+            "sleep",
+            "uname",
+            "wc",
+        ):
+            source = shutil.which(name)
+            if not source:
+                raise unittest.SkipTest(f"host command unavailable: {name}")
+            (self.bin / name).symlink_to(source)
+        process_root = self.proc / "process"
+        self.write_command(
+            "process_self_snapshot",
+            f"#!{sys.executable}\n"
+            "import os\n"
+            f"path = {str(process_root / 'self')!r}\n"
+            "os.makedirs(path, exist_ok=True)\n"
+            "with open(os.path.join(path, 'stat'), 'w') as stream:\n"
+            "    stream.write(f'{os.getppid()} (fixture shell) S\\n')\n",
+        )
+        self.write_command(
+            "process_snapshot",
+            f"#!{sys.executable}\n"
+            "import os\n"
+            "import shutil\n"
+            "import sys\n"
+            f"process_root = {str(process_root)!r}\n"
+            "pid = int(sys.argv[1])\n"
+            "directory = os.path.join(process_root, str(pid))\n"
+            "try:\n"
+            "    os.kill(pid, 0)\n"
+            "except ProcessLookupError:\n"
+            "    shutil.rmtree(directory, ignore_errors=True)\n"
+            "    raise SystemExit(0)\n"
+            "except PermissionError:\n"
+            "    pass\n"
+            "os.makedirs(directory, exist_ok=True)\n"
+            "fields = ['S', str(os.getppid())] + ['0'] * 17 + [str(pid), '0']\n"
+            "with open(os.path.join(directory, 'stat'), 'w') as stream:\n"
+            "    stream.write(f'{pid} (fixture command) ' + ' '.join(fields) + '\\n')\n",
+        )
+        self.write_command("ps", "#!/bin/sh\nprintf '%s\\n' 'PID COMMAND' '1 init'\n")
+        self.write_command("timeout", "#!/bin/sh\nprintf '%s\\n' 'fixture timeout help'\n")
+        self.write_command(
+            "sha256sum",
+            f"""#!{sys.executable}
+import hashlib
+import sys
+
+for name in sys.argv[1:]:
+    with open(name, "rb") as stream:
+        digest = hashlib.sha256(stream.read()).hexdigest()
+    print(f"{{digest}}  {{name}}")
+""",
+        )
+
+    def write_command(self, name: str, content: str) -> None:
+        path = self.bin / name
+        if path.exists() or path.is_symlink():
+            path.unlink()
+        path.write_text(content)
+        path.chmod(0o755)
+
+    def replace_payload_literal(self, name: str, original: str, replacement: str) -> None:
+        path = self.usb / name
+        content = path.read_text()
+        if content.count(original) != 1:
+            raise AssertionError(f"unexpected test payload literal occurrence: {name}: {original}")
+        path.write_text(content.replace(original, replacement))
+
+    def replace_payload_literals(
+        self, name: str, original: str, replacement: str, expected_count: int
+    ) -> None:
+        path = self.usb / name
+        content = path.read_text()
+        if content.count(original) != expected_count:
+            raise AssertionError(f"unexpected test payload literal count: {name}: {original}")
+        path.write_text(content.replace(original, replacement))
+
+    def fail_mv_to(self, destination: Path, allow_matches: int = 0) -> None:
+        real_mv = shutil.which("mv")
+        if not real_mv:
+            raise unittest.SkipTest("host command unavailable: mv")
+        destination = destination.resolve()
+        counter = self.root / "mv-match-count"
+        self.write_command(
+            "mv",
+            "#!/bin/sh\n"
+            "LAST=\n"
+            "for ARG in \"$@\"; do LAST=$ARG; done\n"
+            f"if [ \"$LAST\" = {shlex.quote(str(destination))} ]; then\n"
+            "    COUNT=0\n"
+            f"    [ ! -r {shlex.quote(str(counter))} ] || COUNT=$(/bin/cat {shlex.quote(str(counter))})\n"
+            "    COUNT=$((COUNT + 1))\n"
+            f"    printf '%s\\n' \"$COUNT\" > {shlex.quote(str(counter))}\n"
+            f"    [ \"$COUNT\" -le {allow_matches} ] || exit 1\n"
+            "fi\n"
+            f"exec {shlex.quote(real_mv)} \"$@\"\n",
+        )
+
+    def _write_target_data(self) -> None:
+        (self.dev / "sda1").write_text("")
+        (self.sys / "block/sda/removable").write_text("1\n")
+        (self.proc / "cpuinfo").write_text("Hardware\t: GEMINI\n")
+        (self.proc / "mtd").write_text('mtd12: 00800000 00020000 "nvm"\n')
+        (self.proc / "cmdline").write_text("console=ttyS0\n")
+        (self.proc / "bus/input/devices").write_text('N: Name="fts_ts"\nH: Handlers=event3\n\n')
+        for name, value in (
+            ("virtual_size", "1920,1440\n"),
+            ("bits_per_pixel", "32\n"),
+            ("stride", "7680\n"),
+            ("name", "fb0\n"),
+        ):
+            (self.sys / "class/graphics/fb0" / name).write_text(value)
+
+    def set_mounts(self, *mounts: tuple[str, Path, str]) -> None:
+        lines = []
+        for device, mount, filesystem in mounts:
+            disk = device.rstrip("0123456789")
+            (self.dev / device).touch()
+            removable = self.sys / "block" / disk / "removable"
+            removable.parent.mkdir(parents=True, exist_ok=True)
+            removable.write_text("1\n")
+            lines.append(f"/dev/{device} {mount.resolve()} {filesystem} rw 0 0")
+        (self.proc / "mounts").write_text("\n".join(lines) + ("\n" if lines else ""))
+
+    def run_entry(self, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["/bin/sh", str(self.usb / "gemn_auto.sh")],
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+
+    def run_stage(self, root: Path, timeout: int = 10) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            ["/bin/sh", str(self.usb / "stage1_probe.sh"), str(root)],
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout,
+        )
+
+    def outputs(self) -> list[Path]:
+        return sorted(path for path in self.usb.glob("stage1-probe*") if path.is_dir())
+
+
+class Stage1ProbeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.fixture = ProbeFixture()
+
+    def tearDown(self) -> None:
+        self.fixture.cleanup()
+
+    def assert_no_complete(self) -> None:
+        self.assertFalse(any((path / "COMPLETE").exists() for path in self.fixture.outputs()))
+
+    def test_deployable_scripts_have_no_runtime_test_mode(self):
+        for name in ("gemn_auto.sh", "mount_guard.sh", "stage1_probe.sh"):
+            content = (SOURCE_DIR / name).read_text()
+            self.assertNotIn("W176_PROBE_TEST_MODE", content)
+            self.assertNotIn("W176_TEST_", content)
+        guard = (SOURCE_DIR / "mount_guard.sh").read_text()
+        self.assertIn("MOUNTS_FILE=/proc/mounts", guard)
+        self.assertIn("SYS_BLOCK_ROOT=/sys/block", guard)
+        self.assertIn("DEV_ROOT=/dev", guard)
+        self.assertIn("DEVICE_TEST=-b", guard)
+        stage = (SOURCE_DIR / "stage1_probe.sh").read_text()
+        self.assertNotIn("timeout -k", stage)
+        self.assertNotIn("busybox timeout", stage)
+        self.assertIn("hard_timeout.backend=parent_proc_state_machine", stage)
+        self.assertNotIn("watchdog", stage)
+        self.assertIn('OBSERVED_STAT_FILE="$PROCESS_ROOT/$OBSERVED_PID/stat"', stage)
+        self.assertIn('OWNED_CHILD_START_TIME=$OBSERVED_START_TIME', stage)
+        self.assertIn('CURRENT_PROCESS_STAT < "$PROCESS_ROOT/self/stat"', stage)
+        self.assertIn('[ "$OBSERVED_PARENT_PID" != "$OWNED_CHILD_EXPECTED_PARENT_PID" ]', stage)
+        self.assertIn('[ "$OBSERVED_START_TIME" != "$OWNED_CHILD_START_TIME" ]', stage)
+        self.assertNotIn('ulimit -f "$OUTPUT_BLOCK_LIMIT";', stage)
+        self.assertEqual(stage.count('"$@" &'), 1)
+        signal_barrier = stage.split("# SIGNAL BARRIER:", 1)[1].split("HARD_TIMEOUT_SELFTEST=", 1)[0]
+        self.assertNotIn("kill -", signal_barrier)
+
+    def test_inherited_test_mode_does_not_redirect_deployable_guard(self):
+        environment = {
+            **os.environ,
+            "W176_PROBE_TEST_MODE": "1",
+            "W176_TEST_PATH": str(self.fixture.bin),
+            "W176_TEST_MOUNTS_FILE": str(self.fixture.proc / "mounts"),
+            "W176_TEST_SYS_BLOCK_ROOT": str(self.fixture.sys / "block"),
+            "W176_TEST_DEV_ROOT": str(self.fixture.dev),
+        }
+        result = subprocess.run(
+            ["/bin/sh", str(SOURCE_DIR / "mount_guard.sh"), str(self.fixture.usb)],
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=5,
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotEqual(result.stdout.strip(), str(self.fixture.usb.resolve()))
+
+    def test_absent_usb_is_rejected(self):
+        self.fixture.set_mounts()
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("found 0", result.stderr)
+        self.assert_no_complete()
+
+    def test_multiple_usb_mounts_are_rejected(self):
+        other = self.fixture.root / "other-usb"
+        other.mkdir()
+        self.fixture.set_mounts(("sda1", self.fixture.usb, "vfat"), ("sdb1", other, "vfat"))
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("found 2", result.stderr)
+        self.assert_no_complete()
+
+    def test_wrong_filesystem_is_rejected(self):
+        self.fixture.set_mounts(("sda1", self.fixture.usb, "ext4"))
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not approved", result.stderr)
+        self.assert_no_complete()
+
+    def test_unexpected_device_name_is_rejected(self):
+        self.fixture.set_mounts(("nvme0n1", self.fixture.usb, "vfat"))
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("found 0", result.stderr)
+        self.assert_no_complete()
+
+    def test_regular_file_cannot_substitute_for_block_device(self):
+        guard = self.fixture.usb / "mount_guard.sh"
+        content = guard.read_text()
+        self.assertEqual(content.count("DEVICE_TEST=-e"), 1)
+        guard.write_text(content.replace("DEVICE_TEST=-e", "DEVICE_TEST=-b"))
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("found 0", result.stderr)
+        self.assert_no_complete()
+
+    def test_non_removable_device_is_rejected(self):
+        self.fixture.set_mounts(("sda1", self.fixture.usb, "vfat"))
+        (self.fixture.sys / "block/sda/removable").write_text("0\n")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("found 0", result.stderr)
+        self.assert_no_complete()
+
+    def test_malformed_mount_table_is_rejected(self):
+        (self.fixture.proc / "mounts").write_text("not a valid mount record\n")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("found 0", result.stderr)
+        self.assert_no_complete()
+
+    def test_missing_mount_metadata_is_rejected(self):
+        (self.fixture.proc / "mounts").unlink()
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mount table is unavailable", result.stderr)
+        self.assert_no_complete()
+
+    def test_arbitrary_internal_output_path_is_rejected(self):
+        result = self.fixture.run_stage(self.fixture.internal)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not the exact removable mount point", result.stderr)
+        self.assert_no_complete()
+
+    def test_direct_invocation_from_usb_subdirectory_is_rejected(self):
+        subdirectory = self.fixture.usb / "payload"
+        subdirectory.mkdir()
+        result = self.fixture.run_stage(subdirectory)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not the exact removable mount point", result.stderr)
+        self.assert_no_complete()
+
+    def test_read_only_output_is_rejected(self):
+        self.fixture.usb.chmod(0o555)
+        result = self.fixture.run_entry()
+        self.fixture.usb.chmod(0o755)
+        self.assertNotEqual(result.returncode, 0)
+        self.assert_no_complete()
+
+    def test_full_output_filesystem_is_rejected(self):
+        self.fixture.write_command("mkdir", "#!/bin/sh\nexit 1\n")
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("cannot create output directory", result.stderr)
+        self.assert_no_complete()
+
+    def test_existing_output_directories_are_not_reused(self):
+        (self.fixture.usb / "stage1-probe").mkdir()
+        (self.fixture.usb / "stage1-probe-1").mkdir()
+        result = self.fixture.run_entry()
+        output = self.fixture.usb / "stage1-probe-2"
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((output / "STATUS.txt").read_text().splitlines()[1], "status=COMPLETE")
+        self.assertTrue((output / "COMPLETE").is_file())
+        self.assertFalse((output / "COMPLETE").is_symlink())
+
+    def test_output_directory_enumeration_is_bounded(self):
+        for index in range(100):
+            name = "stage1-probe" if index == 0 else f"stage1-probe-{index}"
+            (self.fixture.usb / name).mkdir()
+        result = self.fixture.run_entry()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("output directory limit reached", result.stderr)
+        self.assertEqual(len(self.fixture.outputs()), 100)
+
+    def test_missing_command_records_incomplete(self):
+        (self.fixture.bin / "ps").unlink()
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertIn("missing_command:ps", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_external_timeout_is_diagnostic_only(self):
+        (self.fixture.bin / "timeout").unlink()
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("timeout.command=UNAVAILABLE", (output / "CAPABILITIES.txt").read_text())
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_missing_sleep_primitive_fails_closed_before_collection(self):
+        (self.fixture.bin / "sleep").unlink()
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertIn("missing_command:sleep", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "uname.txt").exists())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_timeout_selftest_kill_failure_is_finite_and_prevents_collection(self):
+        self.fixture.replace_payload_literals(
+            "stage1_probe.sh",
+            'kill -KILL "$BOUNDED_CHILD_PID"',
+            'kill -0 "$BOUNDED_CHILD_PID"',
+            2,
+        )
+        result = self.fixture.run_entry(timeout=6)
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("hard_timeout_selftest_failed", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "uname.txt").exists())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_natural_selftest_exit_before_kill_is_not_a_pass(self):
+        self.fixture.replace_payload_literal(
+            "stage1_probe.sh", "SELFTEST_TERM_POLLS=2", "SELFTEST_TERM_POLLS=30"
+        )
+        result = self.fixture.run_entry(timeout=6)
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("hard_timeout_selftest_failed", (output / "ERRORS.txt").read_text())
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "uname.txt").exists())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_delayed_selftest_polling_natural_exit_is_not_a_pass(self):
+        self.fixture.replace_payload_literal(
+            "stage1_probe.sh", "SELFTEST_RUN_POLLS=1", "SELFTEST_RUN_POLLS=30"
+        )
+        result = self.fixture.run_entry(timeout=6)
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("hard_timeout_selftest_failed:runner_status_0", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "uname.txt").exists())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_changed_process_identity_is_never_signalled(self):
+        counter = self.fixture.root / "snapshot-count"
+        process_root = self.fixture.proc / "process"
+        self.fixture.write_command(
+            "process_snapshot",
+            f"#!{sys.executable}\n"
+            "import os\n"
+            "import shutil\n"
+            "import sys\n"
+            f"counter = {str(counter)!r}\n"
+            f"process_root = {str(process_root)!r}\n"
+            "pid = int(sys.argv[1])\n"
+            "directory = os.path.join(process_root, str(pid))\n"
+            "try:\n"
+            "    os.kill(pid, 0)\n"
+            "except ProcessLookupError:\n"
+            "    shutil.rmtree(directory, ignore_errors=True)\n"
+            "    raise SystemExit(0)\n"
+            "try:\n"
+            "    count = int(open(counter).read()) + 1\n"
+            "except (FileNotFoundError, ValueError):\n"
+            "    count = 1\n"
+            "with open(counter, 'w') as stream:\n"
+            "    stream.write(str(count))\n"
+            "os.makedirs(directory, exist_ok=True)\n"
+            "start_time = pid if count == 1 else pid + 1\n"
+            "fields = ['S', str(os.getppid())] + ['0'] * 17 + [str(start_time), '0']\n"
+            "with open(os.path.join(directory, 'stat'), 'w') as stream:\n"
+            "    stream.write(f'{pid} (fixture command) ' + ' '.join(fields) + '\\n')\n",
+        )
+        result = self.fixture.run_entry(timeout=6)
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("hard_timeout_selftest_failed:runner_status_0_child_completed", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "uname.txt").exists())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_timeout_selftest_success_precedes_collection(self):
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        capabilities = (output / "CAPABILITIES.txt").read_text()
+        self.assertIn("hard_timeout.backend=parent_proc_state_machine", capabilities)
+        self.assertIn("hard_timeout.selftest=PASS", capabilities)
+        self.assertIn("timeout_help.status=0", capabilities)
+        self.assertTrue((output / "uname.txt").is_file())
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_diagnostic_command_exit_status_is_preserved_and_nonblocking(self):
+        self.fixture.write_command("timeout", "#!/bin/sh\nprintf '%s\\n' diagnostic\nexit 7\n")
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        capabilities = (output / "CAPABILITIES.txt").read_text()
+        self.assertIn("timeout_help.status=7", capabilities)
+        self.assertIn("timeout_help.output.1=diagnostic", capabilities)
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_hanging_diagnostic_is_bounded_and_nonblocking(self):
+        self.fixture.write_command("timeout", "#!/bin/sh\ntrap '' TERM\nwhile :; do :; done\n")
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("timeout_help.status=124", (output / "CAPABILITIES.txt").read_text())
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_failed_diagnostic_ulimit_prevents_command_execution(self):
+        executed = self.fixture.root / "diagnostic-executed"
+        self.fixture.write_command(
+            "timeout",
+            "#!/bin/sh\n"
+            f"printf '%s\\n' executed > {shlex.quote(str(executed))}\n",
+        )
+        self.fixture.replace_payload_literal(
+            "stage1_probe.sh",
+            "ulimit -f 8 >/dev/null 2>&1 || exit 126",
+            "false || exit 126",
+        )
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(executed.exists())
+        self.assertIn("timeout_help.status=126", (output / "CAPABILITIES.txt").read_text())
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_large_diagnostic_output_is_constrained(self):
+        self.fixture.write_command(
+            "timeout",
+            "#!/bin/sh\n"
+            "LINE=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\n"
+            "while :; do printf '%s\\n' \"$LINE$LINE\"; done\n",
+        )
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        capabilities = output / "CAPABILITIES.txt"
+        self.assertLess(capabilities.stat().st_size, 20000)
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_special_and_symlink_appinfo_are_skipped(self):
+        appinfo_dir = self.fixture.internal / "application/etc"
+        appinfo_dir.mkdir(parents=True)
+        target = self.fixture.internal / "real-appinfo.rc"
+        target.write_text("GEMINI\n")
+        (appinfo_dir / "appinfo.rc").symlink_to(target)
+        handler_target = self.fixture.internal / "real-usb-handler"
+        handler_target.write_text("handler\n")
+        (self.fixture.internal / "application/bin/specialusb").symlink_to(handler_target)
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((output / "appinfo.rc").exists())
+        self.assertIn("non_regular_or_symlink", (output / "OPTIONAL.txt").read_text())
+        self.assertEqual((output / "usb-handlers.sha256").read_text(), "")
+        self.assertTrue((output / "COMPLETE").exists())
+
+        (appinfo_dir / "appinfo.rc").unlink()
+        os.mkfifo(appinfo_dir / "appinfo.rc")
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse((output / "appinfo.rc").exists())
+        self.assertIn("non_regular_or_symlink", (output / "OPTIONAL.txt").read_text())
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_regular_appinfo_and_handler_are_collected(self):
+        appinfo_dir = self.fixture.internal / "application/etc"
+        appinfo_dir.mkdir(parents=True)
+        (appinfo_dir / "appinfo.rc").write_text("GEMINI\n")
+        handler = self.fixture.internal / "application/bin/usb-handler"
+        handler.write_text("handler\n")
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((output / "appinfo.rc").read_text(), "GEMINI\n")
+        self.assertIn(str(handler), (output / "usb-handler-candidates.txt").read_text())
+        self.assertIn(str(handler), (output / "usb-handlers.sha256").read_text())
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_hanging_optional_operation_times_out(self):
+        self.fixture.write_command("fbset", "#!/bin/sh\nexec /bin/sleep 30\n")
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("fbset=SKIPPED:failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_term_ignoring_child_is_killed(self):
+        pid_file = self.fixture.root / "term-ignoring.pid"
+        self.fixture.write_command(
+            "fbset",
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$$\" > {shlex.quote(str(pid_file))}\n"
+            "trap '' TERM\n"
+            "while :; do :; done\n",
+        )
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("fbset=SKIPPED:failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        pid = int(pid_file.read_text().strip())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        self.assertTrue((output / "COMPLETE").is_file())
+        self.assertFalse((output / "COMPLETE").is_symlink())
+
+    def test_term_ignoring_kill_path_stress(self):
+        pid_file = self.fixture.root / "term-ignoring-stress.pid"
+        self.fixture.write_command(
+            "fbset",
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$$\" > {shlex.quote(str(pid_file))}\n"
+            "trap '' TERM\n"
+            "while :; do :; done\n",
+        )
+        killed_pids = []
+        for _ in range(12):
+            result = self.fixture.run_entry(timeout=12)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            killed_pids.append(int(pid_file.read_text().strip()))
+            output = self.fixture.outputs()[-1]
+            self.assertIn("fbset=SKIPPED:failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        for pid in killed_pids:
+            with self.assertRaises(ProcessLookupError):
+                os.kill(pid, 0)
+
+    def test_timeout_child_that_accepts_term_is_reaped(self):
+        pid_file = self.fixture.root / "term-responsive.pid"
+        self.fixture.write_command(
+            "fbset",
+            "#!/bin/sh\n"
+            f"printf '%s\\n' \"$$\" > {shlex.quote(str(pid_file))}\n"
+            "trap 'exit 23' TERM\n"
+            "while :; do :; done\n",
+        )
+        result = self.fixture.run_entry(timeout=8)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("fbset=SKIPPED:failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        pid = int(pid_file.read_text().strip())
+        with self.assertRaises(ProcessLookupError):
+            os.kill(pid, 0)
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_poll_helpers_and_children_are_cleaned_up(self):
+        process_log = self.fixture.root / "sleep-processes.txt"
+        self.fixture.write_command(
+            "sleep",
+            f"#!{sys.executable}\n"
+            "import os\n"
+            "import sys\n"
+            "import time\n"
+            f"with open({str(process_log)!r}, 'a') as stream:\n"
+            "    stream.write(f'{os.getpid()} {os.getppid()}\\n')\n"
+            "time.sleep(float(sys.argv[1]))\n",
+        )
+        result = self.fixture.run_entry()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        recorded = {
+            int(value)
+            for line in process_log.read_text().splitlines()
+            for value in line.split()
+            if value.isdigit()
+        }
+        self.assertTrue(recorded)
+        for pid in recorded:
+            try:
+                os.kill(pid, 0)
+            except (ProcessLookupError, PermissionError):
+                continue
+            self.fail(f"fixture process {pid} survived runner cleanup")
+
+    def test_near_deadline_completion_has_no_signal_after_reap(self):
+        self.fixture.write_command("fbset", "#!/bin/sh\nexec /bin/sleep 0.45\n")
+        for _ in range(20):
+            result = self.fixture.run_entry(timeout=12)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            output = self.fixture.outputs()[-1]
+            self.assertIn("fbset=OK", (output / "OPTIONAL.txt").read_text())
+            victim = subprocess.Popen(["/bin/sleep", "0.15"])
+            self.assertEqual(victim.wait(timeout=2), 0)
+        for output in self.fixture.outputs():
+            self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_repeated_fast_completion_has_no_late_signaller(self):
+        handler_directory = self.fixture.internal / "application/bin"
+        for index in range(20):
+            (handler_directory / f"usb-fast-{index}").write_text("handler\n")
+        result = self.fixture.run_entry(timeout=12)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        victim = subprocess.Popen(["/bin/sleep", "1.2"])
+        self.assertEqual(victim.wait(timeout=3), 0)
+        output = self.fixture.outputs()[-1]
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_fifo_replacement_open_is_inside_timeout(self):
+        appinfo_dir = self.fixture.internal / "application/etc"
+        appinfo_dir.mkdir(parents=True)
+        candidate = appinfo_dir / "appinfo.rc"
+        candidate.write_text("GEMINI\n")
+        real_wc = shutil.which("wc")
+        if not real_wc:
+            self.skipTest("host command unavailable: wc")
+        self.fixture.write_command(
+            "wc",
+            "#!/bin/sh\n"
+            f"if [ \"$#\" -eq 2 ] && [ \"$1\" = -c ] && [ \"$2\" = {shlex.quote(str(candidate))} ]; then\n"
+            f"    /bin/rm -f {shlex.quote(str(candidate))}\n"
+            f"    /usr/bin/mkfifo {shlex.quote(str(candidate))}\n"
+            "fi\n"
+            f"exec {shlex.quote(real_wc)} \"$@\"\n",
+        )
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("size_check_failed", (output / "OPTIONAL.txt").read_text())
+        self.assertFalse((output / "appinfo.rc").exists())
+        self.assertTrue((output / "COMPLETE").is_file())
+
+    def test_hanging_handler_enumeration_times_out(self):
+        real_ls = shutil.which("ls")
+        assert real_ls is not None
+        hanging_directory = self.fixture.internal / "usr/local/bin"
+        self.fixture.write_command(
+            "ls",
+            "#!/bin/sh\n"
+            f"if [ \"$#\" -eq 2 ] && [ \"$1\" = -1 ] && [ \"$2\" = {shlex.quote(str(hanging_directory))} ]; then\n"
+            "    exec /bin/sleep 30\n"
+            "fi\n"
+            f"exec {shlex.quote(real_ls)} \"$@\"\n",
+        )
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            f"usb_handlers:{hanging_directory}=SKIPPED:enumeration_failed_or_timed_out",
+            (output / "OPTIONAL.txt").read_text(),
+        )
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_hanging_handler_hash_times_out(self):
+        (self.fixture.internal / "application/bin/usb-handler").write_text("handler\n")
+        self.fixture.write_command("sha256sum", "#!/bin/sh\nexec /bin/sleep 30\n")
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("hash_failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        self.assertEqual((output / "usb-handlers.sha256").read_text(), "")
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_hanging_appinfo_copy_times_out(self):
+        appinfo_dir = self.fixture.internal / "application/etc"
+        appinfo_dir.mkdir(parents=True)
+        (appinfo_dir / "appinfo.rc").write_text("GEMINI\n")
+        self.fixture.write_command("cp", "#!/bin/sh\nexec /bin/sleep 30\n")
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("copy_failed_or_timed_out", (output / "OPTIONAL.txt").read_text())
+        self.assertFalse((output / "appinfo.rc").exists())
+        self.assertTrue((output / "COMPLETE").exists())
+
+    def test_hanging_mandatory_collection_is_incomplete(self):
+        real_cat = shutil.which("cat")
+        assert real_cat is not None
+        hanging_file = self.fixture.proc / "mtd"
+        self.fixture.write_command(
+            "cat",
+            "#!/bin/sh\n"
+            f"if [ \"$#\" -eq 1 ] && [ \"$1\" = {shlex.quote(str(hanging_file))} ]; then\n"
+            "    exec /bin/sleep 30\n"
+            "fi\n"
+            f"exec {shlex.quote(real_cat)} \"$@\"\n",
+        )
+        result = self.fixture.run_entry(timeout=12)
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertIn("mtd:collection_failed_or_timed_out", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_optional_manifest_write_failure_is_incomplete(self):
+        optional_work = self.fixture.usb / "stage1-probe/.OPTIONAL.txt.work"
+        self.fixture.write_command(
+            "ps",
+            "#!/bin/sh\n"
+            f"/bin/chmod 0444 {shlex.quote(str(optional_work))}\n"
+            "printf '%s\\n' 'PID COMMAND' '1 init'\n",
+        )
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        optional_file = output / "OPTIONAL.txt"
+        if optional_file.exists():
+            optional_file.chmod(0o644)
+        elif optional_work.exists():
+            optional_work.chmod(0o644)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertIn("cannot_write_optional_manifest", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_error_manifest_append_failure_is_incomplete(self):
+        error_work = self.fixture.usb / "stage1-probe/.ERRORS.txt.work"
+        self.fixture.write_command(
+            "uname",
+            "#!/bin/sh\n"
+            f"/bin/chmod 0444 {shlex.quote(str(error_work))}\n"
+            "printf '%s\\n' 'Linux test 1.0'\n",
+        )
+        (self.fixture.proc / "mtd").unlink()
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        committed_error = output / "ERRORS.txt"
+        if committed_error.exists():
+            committed_error.chmod(0o644)
+        elif error_work.exists():
+            error_work.chmod(0o644)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_summary_finalization_failure_has_no_complete(self):
+        destination = self.fixture.usb / "stage1-probe/stage1-summary.txt"
+        self.fixture.fail_mv_to(destination)
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("summary:cannot_write_output", (output / "ERRORS.txt").read_text())
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_capabilities_finalization_failure_has_no_complete(self):
+        destination = self.fixture.usb / "stage1-probe/CAPABILITIES.txt"
+        self.fixture.fail_mv_to(destination)
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("capabilities:cannot_write_output", (output / "ERRORS.txt").read_text())
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_summary_write_failure_has_no_complete(self):
+        summary_temp = self.fixture.usb / "stage1-probe/.stage1-summary.txt.tmp"
+        self.fixture.write_command(
+            "ps",
+            "#!/bin/sh\n"
+            f"/bin/mkdir {shlex.quote(str(summary_temp))}\n"
+            "printf '%s\\n' 'PID COMMAND' '1 init'\n",
+        )
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("summary:cannot_write_output", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_readme_finalization_failure_has_no_complete(self):
+        destination = self.fixture.usb / "stage1-probe/README.txt"
+        self.fixture.fail_mv_to(destination)
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("readme:cannot_write_output", (output / "ERRORS.txt").read_text())
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_readme_write_failure_has_no_complete(self):
+        readme_temp = self.fixture.usb / "stage1-probe/.README.txt.tmp"
+        self.fixture.write_command(
+            "ps",
+            "#!/bin/sh\n"
+            f"/bin/mkdir {shlex.quote(str(readme_temp))}\n"
+            "printf '%s\\n' 'PID COMMAND' '1 init'\n",
+        )
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("readme:cannot_write_output", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_mandatory_output_finalization_failure_has_no_complete(self):
+        destination = self.fixture.usb / "stage1-probe/mtd.txt"
+        self.fixture.fail_mv_to(destination)
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mtd:cannot_commit_output", (output / "ERRORS.txt").read_text())
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_final_complete_status_failure_has_no_complete(self):
+        destination = self.fixture.usb / "stage1-probe/STATUS.txt"
+        self.fixture.fail_mv_to(destination, allow_matches=1)
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_initial_status_write_failure_has_no_complete(self):
+        real_mkdir = shutil.which("mkdir")
+        if not real_mkdir:
+            self.skipTest("host command unavailable: mkdir")
+        self.fixture.write_command(
+            "mkdir",
+            "#!/bin/sh\n"
+            f"{shlex.quote(real_mkdir)} \"$@\" || exit 1\n"
+            "LAST=\n"
+            "for ARG in \"$@\"; do LAST=$ARG; done\n"
+            'case "$LAST" in *stage1-probe) /bin/mkdir "$LAST/.STATUS.txt.tmp" ;; esac\n',
+        )
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_complete_rename_failure_has_no_complete(self):
+        destination = self.fixture.usb / "stage1-probe/COMPLETE"
+        self.fixture.fail_mv_to(destination)
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_complete_temp_write_failure_has_no_complete(self):
+        complete_temp = self.fixture.usb / "stage1-probe/.COMPLETE.tmp"
+        self.fixture.write_command(
+            "ps",
+            "#!/bin/sh\n"
+            f"/bin/mkdir {shlex.quote(str(complete_temp))}\n"
+            "printf '%s\\n' 'PID COMMAND' '1 init'\n",
+        )
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+    def test_symlink_complete_is_rejected_and_quarantined(self):
+        destination = (self.fixture.usb / "stage1-probe/COMPLETE").resolve()
+        real_mv = shutil.which("mv")
+        if not real_mv:
+            self.skipTest("host command unavailable: mv")
+        self.fixture.write_command(
+            "mv",
+            "#!/bin/sh\n"
+            "LAST=\n"
+            "for ARG in \"$@\"; do LAST=$ARG; done\n"
+            f"if [ \"$LAST\" = {shlex.quote(str(destination))} ]; then\n"
+            "    /bin/ln -s \"$1\" \"$LAST\"\n"
+            "    exit 0\n"
+            "fi\n"
+            f"exec {shlex.quote(real_mv)} \"$@\"\n",
+        )
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+        self.assertTrue((output / ".COMPLETE.invalid").is_symlink())
+
+    def test_mandatory_failure_never_creates_complete_marker(self):
+        (self.fixture.proc / "mtd").unlink()
+        result = self.fixture.run_entry()
+        output = self.fixture.outputs()[-1]
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("status=INCOMPLETE", (output / "STATUS.txt").read_text())
+        self.assertIn("mtd:collection_failed_or_timed_out", (output / "ERRORS.txt").read_text())
+        self.assertFalse((output / "COMPLETE").exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
