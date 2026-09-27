@@ -226,9 +226,10 @@ class Round2Tests(unittest.TestCase):
         root = self.fixture.output()
         path = root / "processes/owners.txt"
         original = path.read_text()
-        for record in ["101|999999|7|/dev/hc_mcu_dev\n",
-                       "101|10101|7|/dev/canbox_protocol_dev\n",
-                       "101|999999|8|/dev/hc_mcu_dev\n"]:
+        for record in ["101|101|999999|7|/dev/hc_mcu_dev\n",
+                       "101|101|10101|7|/dev/canbox_protocol_dev\n",
+                       "101|101|999999|8|/dev/hc_mcu_dev\n",
+                       "101|999|10101|8|/dev/hc_mcu_dev\n"]:
             path.write_text(original+record)
             rewrite_checksum(root, "processes/owners.txt")
             with self.assertRaises(InvalidCapture):
@@ -240,14 +241,17 @@ class Round2Tests(unittest.TestCase):
         inventory = root / "capture-inventory.txt"
         original = [line for line in inventory.read_text().splitlines() if not line.startswith("owner_")]
         manifest = root / "checksums.sha256"
-        hashes = [line for line in manifest.read_text().splitlines() if "  processes/101-" not in line]
+        hashes = [line for line in manifest.read_text().splitlines()
+                  if "  processes/101-" not in line and not line.endswith("  processes/leaders.txt")]
         templates = {kind: (root / f"processes/101-{kind}{suffix}").read_bytes()
                      for kind, suffix in [("comm", ".txt"), ("cmdline", ".bin"), ("exe", ".txt"), ("maps", ".txt")]}
         for path in (root / "processes").glob("101-*"):
             path.unlink()
         records = []
+        leaders = []
         for pid in range(100,100+count):
-            records.append(f"{pid}|{10000+pid}|7|/dev/hc_mcu_dev")
+            records.append(f"{pid}|{pid}|{10000+pid}|7|/dev/hc_mcu_dev")
+            leaders.append(f"{pid}|{pid}|{10000+pid}")
             for kind, suffix in [("comm",".txt"), ("cmdline",".bin"), ("exe",".txt"), ("maps",".txt")]:
                 data = b"x"*maps_size if kind=="maps" else templates[kind]
                 relative = f"processes/{pid}-{kind}{suffix}"
@@ -256,6 +260,9 @@ class Round2Tests(unittest.TestCase):
                 hashes.append(f"{hashlib.sha256(data).hexdigest()}  {relative}")
         inventory.write_text("\n".join(original)+"\n")
         (root / "processes/owners.txt").write_text("\n".join(records)+"\n")
+        leader_data = ("\n".join(leaders)+"\n").encode()
+        (root / "processes/leaders.txt").write_bytes(leader_data)
+        hashes.append(f"{hashlib.sha256(leader_data).hexdigest()}  processes/leaders.txt")
         summary = root / "SUMMARY.txt"
         summary.write_text("\n".join(f"{key}={value}" for key,value in
                           (line.split("=",1) for line in summary.read_text().splitlines())

@@ -166,10 +166,14 @@ class Fixture:
         fields = ["S", "1"] + ["0"] * 17 + [str(start)]
         return f"{pid} (fixture owner) " + " ".join(fields) + "\n"
 
+    def write_status(self, pid: int, tgid: int | str | None = None) -> str:
+        return f"Name:\tfixture\nTgid:\t{pid if tgid is None else tgid}\nPid:\t{pid}\n"
+
     def add_owner(self, pid: int, target: Path, fd: int = 7, maps_size: int = 32) -> None:
         root = self.proc / "process" / str(pid)
         (root / "fd").mkdir(parents=True, exist_ok=True)
         (root / "stat").write_text(self.write_stat(pid, 10_000 + pid))
+        (root / "status").write_text(self.write_status(pid))
         (root / "comm").write_text("fixture-owner\n")
         (root / "cmdline").write_bytes(b"fixture-owner\x00--idle\x00")
         (root / "maps").write_text("x" * maps_size)
@@ -261,7 +265,7 @@ class Stage4ATests(unittest.TestCase):
         self.assertEqual(report["evidence"]["mcu_translation_path"], "INFERENCE")
         self.assertEqual(report["evidence"]["physical_mercedes_can_connectivity"], "UNKNOWN")
         self.assertEqual(report["integrity_model"], "CONSISTENCY_ONLY_NOT_AUTHENTICATION")
-        self.assertEqual(report["verified_checksums"], 17)
+        self.assertEqual(report["verified_checksums"], 18)
 
     def test_approved_library_fifo_is_rejected_before_open(self) -> None:
         self.assert_library_special_rejected()
@@ -428,7 +432,7 @@ class Stage4ATests(unittest.TestCase):
         self.assertEqual(report["evidence"]["mcu_translation_path"], "INFERENCE")
 
     def inject_before_after_bracket(self, shell: str) -> None:
-        marker = "                # AFTER bracket: start time, FD target, and safe descriptor metadata must match.\n"
+        marker = "                # AFTER bracket: still the same leader, start time, FD target,\n"
         self.fixture.replace(marker, shell + "\n" + marker)
 
     def assert_owner_race_discarded(self) -> None:
@@ -466,7 +470,7 @@ class Stage4ATests(unittest.TestCase):
     def test_stable_owner_has_complete_bracketed_metadata(self) -> None:
         self.assertEqual(self.fixture.run().returncode, 0)
         root = self.fixture.output()
-        self.assertIn("101|10101|7|/dev/hc_mcu_dev", (root / "processes/owners.txt").read_text())
+        self.assertIn("101|101|10101|7|/dev/hc_mcu_dev", (root / "processes/owners.txt").read_text())
         for suffix in ("comm.txt", "cmdline.bin", "exe.txt", "maps.txt"):
             self.assertTrue((root / f"processes/101-{suffix}").is_file())
 
@@ -489,7 +493,7 @@ class Stage4ATests(unittest.TestCase):
         owner.symlink_to(self.fixture.dev / "hc_mcu_dev")
         self.assertEqual(self.fixture.run().returncode, 0)
         text = (self.fixture.output() / "processes/owners.txt").read_text()
-        self.assertIn("4096|14096|127|/dev/hc_mcu_dev", text)
+        self.assertIn("4096|4096|14096|127|/dev/hc_mcu_dev", text)
         self.assertNotIn("4097|", text)
         self.assertNotIn("|128|", text)
 
@@ -519,7 +523,8 @@ class Stage4ATests(unittest.TestCase):
             process = self.fixture.proc / "process" / str(pid)
             (process / "fd").mkdir(parents=True)
             (process / "stat").write_text(self.fixture.write_stat(pid, 20_000 + pid))
-        self.assert_incomplete(self.fixture.run())
+            (process / "status").write_text(self.fixture.write_status(pid))
+        self.assert_incomplete(self.fixture.run(timeout=45))
 
     def test_readonly_library_and_map_bounds_fail_closed(self) -> None:
         path = self.fixture.target / "application/lib/libappframework.so.1.0.0"
@@ -565,7 +570,7 @@ class Stage4ATests(unittest.TestCase):
         root = self.fixture.output()
         for relative, value in (
             ("COMPLETE", "complete=0\n"),
-            ("STATUS.txt", "schema=2\nscope=w176-stage4a-can-mcu-topology\nstatus=COMPLETE\nmandatory_failures=1\noptional_findings=0\n"),
+            ("STATUS.txt", "schema=3\nscope=w176-stage4a-can-mcu-topology\nstatus=COMPLETE\nmandatory_failures=1\noptional_findings=0\n"),
             ("ERRORS.txt", "error.1=hidden\n"),
         ):
             original = (root / relative).read_bytes()

@@ -17,8 +17,10 @@ It captures only:
   `/dev/canbox_protocol_dev`, `/dev/hc_mcu_dev`, `/dev/can0`..`can7`, and
   `/dev/ttyS0`..`ttyS7`;
 - bounded `/proc/<pid>/fd` symlink correlation over PIDs 1..4096 and FD numbers
-  0..127, with metadata collection bracketed by PID start-time, FD-target, and
-  safe FD-stat checks;
+  0..127 **only for kernel-reported TGID leaders**, with metadata collection
+  bracketed by TGID, PID start-time, FD-target, and safe FD-stat checks;
+- a bounded checksum-covered process-leader roster so the analyser can verify
+  `processes_inspected` exactly and require every owner to be a retained leader;
 - bounded `comm`, `cmdline`, `exe` symlink, and `maps` only for matched
   production owners; and
 - regular/non-symlink metadata preflight inside the physically confirmed
@@ -71,8 +73,9 @@ authentication.
 
 ## Bounds
 
-The candidate scans only PID numbers 1..4096, accepts at most 256 present
-processes, checks only FD numbers 0..127, permits 4,096 existing FD links total
+The candidate scans only numeric proc IDs 1..4096, accepts at most 256
+confirmed process leaders for FD inspection, checks only FD numbers 0..127,
+permits 4,096 existing FD links total
 and 16 matched owners, and bounds maps to 64 KiB per owner and 512 KiB total.
 It permits 32 interfaces from a 64-KiB `/proc/net/dev` snapshot, exactly 18
 device path candidates, 4,096-byte symlink results, 384 KiB for
@@ -83,7 +86,9 @@ complete audit and theoretical pre-acceptance byte bound are in the round-2
 record. PIDs above 4096 and FD numbers above 127
 are explicitly `NOT_INSPECTED`, not evidence of absence.
 
-The installed library sizes confirmed by Stage 2 (287,536 and 213,496 bytes)
+The TGID-aware candidate and its host fixture evidence are described in
+`w176-stage4a-tgid-remediation.md`. The installed library sizes confirmed by
+Stage 2 (287,536 and 213,496 bytes)
 fit those individual limits.
 
 ## Host validation

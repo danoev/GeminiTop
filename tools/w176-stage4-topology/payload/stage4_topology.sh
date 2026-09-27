@@ -88,7 +88,7 @@ CHECKSUM_PATHS=.checksum-paths
 
 commit_file() { is_regular_nonsymlink "$1" && mv "$1" "$2" && is_regular_nonsymlink "$2"; }
 status_write() {
-    printf '%s\n' "schema=2" "scope=w176-stage4a-can-mcu-topology" "status=$1" \
+    printf '%s\n' "schema=3" "scope=w176-stage4a-can-mcu-topology" "status=$1" \
         "mandatory_failures=$FAILURES" "optional_findings=$OPTIONALS" > .STATUS.txt.tmp &&
         commit_file .STATUS.txt.tmp STATUS.txt
 }
@@ -292,6 +292,27 @@ read_start_time() {
     [ "${#START_TIME}" -le 20 ] || return 1
 }
 
+# /proc/<tid> is directly addressable even for a non-leader. Read bounded
+# kernel status before deciding whether a numeric ID is a process leader.
+read_tgid() {
+    TGID_SOURCE=$1/status; TGID_TEMP=.proc-status.tmp; TGID_VALUE=.proc-tgid.tmp
+    [ -f "$TGID_SOURCE" ] && [ ! -L "$TGID_SOURCE" ] || return 1
+    rm -f "$TGID_TEMP" "$TGID_VALUE" 2>/dev/null || return 1
+    # Three bounded records cover short proc reads without per-byte FAT writes.
+    dd if="$TGID_SOURCE" of="$TGID_TEMP" bs=4096 count=3 2>/dev/null || return 1
+    TGID_SIZE=$(stat -c '%s' "$TGID_TEMP" 2>/dev/null) || return 1
+    [ "$TGID_SIZE" -gt 0 ] && [ "$TGID_SIZE" -le 8192 ] || return 1
+    awk '
+        /^Tgid:/ {
+            count++; value=substr($0, 6); gsub(/^[ \t]+|[ \t]+$/, "", value)
+            if (value !~ /^[0-9]+$/ || length(value)>20) bad=1
+        }
+        END { if (count!=1 || bad) exit 1; print value }
+    ' "$TGID_TEMP" > "$TGID_VALUE" || return 1
+    IFS= read -r TGID < "$TGID_VALUE" 2>/dev/null || return 1
+    [ -n "$TGID" ] || return 1
+}
+
 stage_owner_text() {
     OWNER_SOURCE=$1; OWNER_LIMIT=$2; OWNER_TEMP=$3
     [ -f "$OWNER_SOURCE" ] && [ ! -L "$OWNER_SOURCE" ] || return 1
@@ -310,15 +331,27 @@ commit_owner_file() {
 }
 
 : > processes/owners.txt || record_failure "owners_create"
+: > processes/leaders.txt || record_failure "leaders_create"
 : > .owners-seen || record_failure "owner_state_create"
 PROCESS_COUNT=0; TOTAL_FD_LINKS=0; OWNER_COUNT=0; TOTAL_MAPS=0
 PID=1
 while [ "$PID" -le "$PID_SCAN_MAX" ]; do
     PDIR="$PROCESS_ROOT/$PID"
     if [ -d "$PDIR" ] && [ ! -L "$PDIR" ]; then
+        if ! read_tgid "$PDIR"; then record_optional "pid_status_unusable:$PID"; PID=$((PID + 1)); continue; fi
+        case "$TGID" in 0|0*) record_optional "pid_tgid_invalid:$PID"; PID=$((PID + 1)); continue ;; esac
+        if [ "${#TGID}" -gt 4 ] || [ "$TGID" -gt "$PID_SCAN_MAX" ]; then
+            record_optional "pid_tgid_outside_scan:$PID"; PID=$((PID + 1)); continue
+        fi
+        [ "$TGID" -eq "$PID" ] || { PID=$((PID + 1)); continue; }
+        if read_start_time "$PDIR"; then START_BEFORE=$START_TIME; else record_optional "pid_race:$PID"; PID=$((PID + 1)); continue; fi
+        [ -d "$PDIR/fd" ] && [ ! -L "$PDIR/fd" ] || {
+            record_optional "leader_fd_unavailable:$PID"; PID=$((PID + 1)); continue
+        }
         PROCESS_COUNT=$((PROCESS_COUNT + 1))
         [ "$PROCESS_COUNT" -le "$MAX_PROCESSES" ] || { record_failure "process_limit"; break; }
-        if read_start_time "$PDIR"; then START_BEFORE=$START_TIME; else record_optional "pid_race:$PID"; PID=$((PID + 1)); continue; fi
+        append_bounded processes/leaders.txt 16384 "$PID|$PID|$START_BEFORE" || record_failure "leaders_write"
+        [ "$FAILURES" -eq 0 ] || break
         FD_NUMBER=0
         while [ "$FD_NUMBER" -le "$FD_NUMBER_MAX" ]; do
             FD_PATH="$PDIR/fd/$FD_NUMBER"
@@ -342,8 +375,11 @@ while [ "$PID" -le "$PID_SCAN_MAX" ]; do
                     stage_owner_text "$PDIR/maps" "$MAX_MAPS_PER_PROCESS" ".owner-$PID-maps.tmp" || OWNER_NEW=-1
                     if bounded_readlink "$PDIR/exe" ".owner-$PID-exe-link.tmp"; then printf '%s\n' "$LINK_VALUE" > ".owner-$PID-exe.tmp" || OWNER_NEW=-1; else OWNER_NEW=-1; fi
                 fi
-                # AFTER bracket: start time, FD target, and safe descriptor metadata must match.
-                if ! read_start_time "$PDIR"; then OWNER_NEW=-1
+                # AFTER bracket: still the same leader, start time, FD target,
+                # and safe descriptor metadata must all match.
+                if ! read_tgid "$PDIR"; then OWNER_NEW=-1
+                elif [ "$TGID" != "$PID" ]; then OWNER_NEW=-1
+                elif ! read_start_time "$PDIR"; then OWNER_NEW=-1
                 elif [ "$START_TIME" != "$START_BEFORE" ]; then OWNER_NEW=-1
                 elif ! bounded_readlink "$FD_PATH" .fd-link-after.tmp; then OWNER_NEW=-1
                 elif [ "$LINK_VALUE" != "$TARGET_BEFORE" ]; then OWNER_NEW=-1
@@ -367,7 +403,7 @@ while [ "$PID" -le "$PID_SCAN_MAX" ]; do
                     commit_owner_file "owner_maps_$PID" "$PDIR/maps" ".owner-$PID-maps.tmp" "processes/$PID-maps.txt"
                     append_bounded .owners-seen 4096 "$PID|$START_BEFORE" || record_failure "owner_state_write"
                 fi
-                append_bounded processes/owners.txt 131072 "$PID|$START_BEFORE|$FD_NUMBER|$LOGICAL_TARGET" || record_failure "owners_write"
+                append_bounded processes/owners.txt 131072 "$PID|$PID|$START_BEFORE|$FD_NUMBER|$LOGICAL_TARGET" || record_failure "owners_write"
             fi
             FD_NUMBER=$((FD_NUMBER + 1))
         done
@@ -446,13 +482,13 @@ snapshot_library appframework "$TARGET_ROOT/application/lib/libappframework.so.1
 snapshot_library appmcu "$TARGET_ROOT/application/lib/libappmcucommunication.so.1.0.0" "$MAX_MCU_LIBRARY_BYTES" files/libappmcucommunication.so.1.0.0
 
 printf '%s\n' \
-    "schema=2" "scope=w176-stage4a-can-mcu-topology" \
+    "schema=3" "scope=w176-stage4a-can-mcu-topology" \
     "interfaces=$INTERFACE_COUNT" "device_candidates=$DEVICE_COUNT" \
     "processes_inspected=$PROCESS_COUNT" "fd_links_inspected=$TOTAL_FD_LINKS" \
     "matched_owners=$OWNER_COUNT" "library_bytes=$TOTAL_LIBRARY_BYTES" > SUMMARY.txt || record_failure "summary_write"
 
 printf '%s\n' \
-    "schema=3" "device_streams.opened=0" "can_frames.received=0" \
+    "schema=4" "device_streams.opened=0" "can_frames.received=0" \
     "can_frames.transmitted=0" "mcu_commands.sent=0" "logging.capture=DEFERRED" \
     "pid.scan.max=$PID_SCAN_MAX" "processes.present.max=$MAX_PROCESSES" \
     "fd.number.max=$FD_NUMBER_MAX" "fd_links.total.max=$MAX_TOTAL_FD_LINKS" \
@@ -461,12 +497,13 @@ printf '%s\n' \
     "devices.max=$MAX_DEVICE_CANDIDATES" "symlink.bytes.max=$MAX_SYMLINK_BYTES" \
     "libappframework.bytes.max=$MAX_FRAMEWORK_BYTES" \
     "libappmcucommunication.bytes.max=$MAX_MCU_LIBRARY_BYTES" \
-    "libraries.total.bytes.max=$MAX_TOTAL_LIBRARY_BYTES" "output.final_capture.kib.max=$MAX_TOTAL_OUTPUT_KIB" \
+    "libraries.total.bytes.max=$MAX_TOTAL_LIBRARY_BYTES" "owner.identity=PID_EQUALS_TGID" \
+    "output.final_capture.kib.max=$MAX_TOTAL_OUTPUT_KIB" \
     "output.write_ceiling=NOT_CLAIMED" "all_writers.individually_bounded=1" \
     "application.boundary=effective-mount-exact-squashfs,ro" "process_pid_above_scan_max=NOT_INSPECTED" \
     "fd_number_above_max=NOT_INSPECTED" > CAPABILITIES.txt || record_failure "capabilities_write"
 
-for OUTPUT_PATH in network/interfaces.txt devices/device-nodes.txt processes/owners.txt SUMMARY.txt CAPABILITIES.txt; do hash_committed "$OUTPUT_PATH"; done
+for OUTPUT_PATH in network/interfaces.txt devices/device-nodes.txt processes/leaders.txt processes/owners.txt SUMMARY.txt CAPABILITIES.txt; do hash_committed "$OUTPUT_PATH"; done
 
 if du -sk . > .du-output.tmp 2>/dev/null; then :; else record_failure "output_size_unavailable"; fi
 if awk 'NR == 1 && NF >= 1 && $1 ~ /^[0-9]+$/ { print $1; ok=1 } END { if (!ok || NR != 1) exit 1 }' \
@@ -475,10 +512,10 @@ if IFS= read -r OUTPUT_KIB < .du-value.tmp 2>/dev/null; then [ "$OUTPUT_KIB" -le
 
 rm -f .interface-names .interface-value.tmp .interface-normal.tmp .interface-link.tmp \
     .device-candidates.paths .device-link.tmp .sys-device-link.tmp .candidate-match.tmp \
-    .proc-stat.tmp .fd-link-before.tmp .fd-link-after.tmp .owners-seen \
+    .proc-stat.tmp .proc-status.tmp .proc-tgid.tmp .fd-link-before.tmp .fd-link-after.tmp .owners-seen \
     .application-mount.tmp .du-output.tmp .du-value.tmp 2>/dev/null || record_failure "temporary_cleanup"
 
-for REQUIRED_OUTPUT in CAPABILITIES.txt SUMMARY.txt network/proc-net-dev.txt network/interfaces.txt devices/device-nodes.txt processes/owners.txt files/libappframework.so.1.0.0 files/libappmcucommunication.so.1.0.0; do
+for REQUIRED_OUTPUT in CAPABILITIES.txt SUMMARY.txt network/proc-net-dev.txt network/interfaces.txt devices/device-nodes.txt processes/leaders.txt processes/owners.txt files/libappframework.so.1.0.0 files/libappmcucommunication.so.1.0.0; do
     is_regular_nonsymlink "$REQUIRED_OUTPUT" || record_failure "required_output_invalid:$REQUIRED_OUTPUT"
 done
 
@@ -504,7 +541,7 @@ final_transaction() {
     strict_sha256 "$COMPLETE_TEMP" COMPLETE || finish_incomplete
     rm -f "$CHECKSUM_PATHS" .sha256-output.tmp .sha256-digest.tmp 2>/dev/null || finish_incomplete
     commit_file "$CHECKSUM_WORK" checksums.sha256 || finish_incomplete
-    for REQUIRED in STATUS.txt ERRORS.txt OPTIONAL.txt CAPABILITIES.txt SUMMARY.txt capture-inventory.txt checksums.sha256 network/proc-net-dev.txt network/interfaces.txt devices/device-nodes.txt processes/owners.txt files/libappframework.so.1.0.0 files/libappmcucommunication.so.1.0.0; do
+    for REQUIRED in STATUS.txt ERRORS.txt OPTIONAL.txt CAPABILITIES.txt SUMMARY.txt capture-inventory.txt checksums.sha256 network/proc-net-dev.txt network/interfaces.txt devices/device-nodes.txt processes/leaders.txt processes/owners.txt files/libappframework.so.1.0.0 files/libappmcucommunication.so.1.0.0; do
         is_regular_nonsymlink "$REQUIRED" || finish_incomplete
     done
     [ ! -s ERRORS.txt ] || finish_incomplete

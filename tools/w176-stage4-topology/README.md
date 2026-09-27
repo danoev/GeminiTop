@@ -34,10 +34,14 @@ The candidate captures:
   `/sys/dev/char` associations for the exact finite set
   `/dev/canbox_protocol_dev`, `/dev/hc_mcu_dev`, `/dev/can0` through
   `/dev/can7`, and `/dev/ttyS0` through `/dev/ttyS7`;
-- bounded correlation of existing `/proc/<pid>/fd` symlink destinations, with
-  an exact PID range of 1..4096 and FD-number range of 0..127;
+- bounded kernel-TGID verification of numeric `/proc/<id>` paths 1..4096;
+  non-leader threads do not consume process/owner counts or scan FDs;
+- bounded correlation of process-leader `/proc/<TGID>/fd` symlink destinations,
+  with FD-number range 0..127 and one owner slot per unique leader;
+- checksum-covered leader roster and explicit `PID|TGID|start|FD|candidate`
+  ownership records, cross-checked by the analyser;
 - bounded `comm`, `cmdline`, `exe`, and `maps` data only for matched owners;
-- before/after PID start-time, FD target, and safe FD-stat bracketing around
+- before/after TGID, PID start-time, FD target, and safe FD-stat bracketing around
   owner metadata; a changed bracket is discarded as race/unusable;
 - pre-open regular/non-symlink checks and confirmation that each exact canonical
   library path is served by the application mount itself (no covering nested
@@ -51,7 +55,7 @@ It does not run `candump`, receive or transmit frames, open device streams,
 issue MCU commands or ioctls, attach to processes, change interfaces or
 logging, or execute/emulate copied ARM libraries.
 
-Individual limits are recorded in schema-3 `CAPABILITIES.txt`. The 2048-KiB
+Individual limits are recorded in schema-4 `CAPABILITIES.txt`. The 2048-KiB
 property is **final acceptance**, not a write-admission ceiling:
 `output.final_capture.kib.max=2048`, `output.write_ceiling=NOT_CLAIMED`,
 `all_writers.individually_bounded=1`. See the writer audit in
@@ -108,3 +112,9 @@ second-review reproductions against temporary fixtures. Never point it at a
 target. Native Linux validation uses `Test.Dockerfile` (pinned Debian base and
 explicit Python/SquashFS package versions), a read-only repository bind, and a
 disposable privileged container for `test_linux_mounts.sh` plus the full suite.
+
+`reproduce_tgid_owner_limit.py` demonstrates the later physically encountered
+owner-inflation defect against frozen candidate `17557e6` in a disposable
+single-TGID/many-TID fixture. The new process model, unresolved coverage
+limitations, and operator completion rule are in
+`docs/platform/w176-stage4a-tgid-remediation.md`.

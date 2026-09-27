@@ -23,6 +23,7 @@ FIXED_EVIDENCE = {
     "network/proc-net-dev.txt",
     "network/interfaces.txt",
     "devices/device-nodes.txt",
+    "processes/leaders.txt",
     "processes/owners.txt",
     "files/libappframework.so.1.0.0",
     "files/libappmcucommunication.so.1.0.0",
@@ -43,6 +44,7 @@ FIXED_LIMITS = {
     "network/proc-net-dev.txt": 65_536,
     "network/interfaces.txt": 262_144,
     "devices/device-nodes.txt": 65_536,
+    "processes/leaders.txt": 16_384,
     "processes/owners.txt": 131_072,
     **LIBRARY_LIMITS,
 }
@@ -304,7 +306,24 @@ def _parse_devices(text: str) -> set[str]:
     return paths
 
 
-def _parse_owners(text: str, owner_kinds: dict[int, set[str]]) -> set[str]:
+def _parse_leaders(text: str) -> dict[int, int]:
+    leaders: dict[int, int] = {}
+    for number, line in enumerate(text.splitlines(), 1):
+        fields = line.split("|")
+        if len(fields) != 3:
+            raise InvalidCapture(f"malformed leader line {number}")
+        pid_text, tgid_text, start_text = fields
+        if (not pid_text.isdigit() or pid_text != tgid_text or not start_text.isdigit()
+                or len(start_text) > 20):
+            raise InvalidCapture(f"invalid leader identity at line {number}")
+        pid = int(pid_text)
+        if not 1 <= pid <= 4096 or pid in leaders or len(leaders) >= 256:
+            raise InvalidCapture(f"duplicate/excess leader at line {number}")
+        leaders[pid] = int(start_text)
+    return leaders
+
+
+def _parse_owners(text: str, owner_kinds: dict[int, set[str]]) -> tuple[set[str], dict[int, int]]:
     owned_paths: set[str] = set()
     records: set[tuple[int, int, int, str]] = set()
     owner_pids: set[int] = set()
@@ -312,10 +331,10 @@ def _parse_owners(text: str, owner_kinds: dict[int, set[str]]) -> set[str]:
     descriptors: dict[tuple[int, int], tuple[int, str]] = {}
     for number, line in enumerate(text.splitlines(), 1):
         fields = line.split("|")
-        if len(fields) != 4:
+        if len(fields) != 5:
             raise InvalidCapture(f"malformed owner line {number}")
-        pid_text, start_text, fd_text, target = fields
-        if not pid_text.isdigit() or not start_text.isdigit() or len(start_text)>20 or not fd_text.isdigit() or target not in DEVICE_PATHS:
+        pid_text, tgid_text, start_text, fd_text, target = fields
+        if not pid_text.isdigit() or pid_text != tgid_text or not start_text.isdigit() or len(start_text)>20 or not fd_text.isdigit() or target not in DEVICE_PATHS:
             raise InvalidCapture(f"invalid owner record at line {number}")
         pid, start, fd = int(pid_text), int(start_text), int(fd_text)
         record = (pid, start, fd, target)
@@ -332,7 +351,7 @@ def _parse_owners(text: str, owner_kinds: dict[int, set[str]]) -> set[str]:
         owned_paths.add(target)
     if len(owner_pids) > 16 or owner_pids != set(owner_kinds):
         raise InvalidCapture("owner records and dynamic inventory groups disagree")
-    return owned_paths
+    return owned_paths, starts
 
 
 def analyze(root: Path) -> dict[str, object]:
@@ -355,13 +374,13 @@ def analyze(root: Path) -> dict[str, object]:
         "status",
     )
     if status != {
-        "schema": "2",
+        "schema": "3",
         "scope": "w176-stage4a-can-mcu-topology",
         "status": "COMPLETE",
         "mandatory_failures": "0",
         "optional_findings": status["optional_findings"],
     } or not status["optional_findings"].isdigit():
-        raise InvalidCapture("transaction status is not a clean schema-2 COMPLETE")
+        raise InvalidCapture("transaction status is not a clean schema-3 COMPLETE")
     if _read_text(root, "COMPLETE", FIXED_LIMITS["COMPLETE"]) != "complete=1\n":
         raise InvalidCapture("invalid COMPLETE marker")
     if _safe_regular(root, "ERRORS.txt", FIXED_LIMITS["ERRORS.txt"]).stat().st_size != 0:
@@ -373,7 +392,7 @@ def analyze(root: Path) -> dict[str, object]:
         "fd.number.max", "fd_links.total.max", "owners.max", "maps.per_process.bytes.max",
         "maps.total.bytes.max", "interfaces.max", "devices.max", "symlink.bytes.max",
         "libappframework.bytes.max", "libappmcucommunication.bytes.max",
-        "libraries.total.bytes.max", "output.final_capture.kib.max", "output.write_ceiling",
+        "libraries.total.bytes.max", "owner.identity", "output.final_capture.kib.max", "output.write_ceiling",
         "all_writers.individually_bounded", "application.boundary",
         "process_pid_above_scan_max", "fd_number_above_max",
     }
@@ -383,14 +402,14 @@ def analyze(root: Path) -> dict[str, object]:
         "capabilities",
     )
     fixed_capabilities = {
-        "schema": "3", "device_streams.opened": "0", "can_frames.received": "0",
+        "schema": "4", "device_streams.opened": "0", "can_frames.received": "0",
         "can_frames.transmitted": "0", "mcu_commands.sent": "0", "logging.capture": "DEFERRED",
         "pid.scan.max": "4096", "processes.present.max": "256", "fd.number.max": "127",
         "fd_links.total.max": "4096", "owners.max": "16", "maps.per_process.bytes.max": "65536",
         "maps.total.bytes.max": "524288", "interfaces.max": "32", "devices.max": "18",
         "symlink.bytes.max": "4096", "libappframework.bytes.max": "393216",
         "libappmcucommunication.bytes.max": "327680", "libraries.total.bytes.max": "720896",
-        "output.final_capture.kib.max": "2048", "output.write_ceiling": "NOT_CLAIMED",
+        "owner.identity": "PID_EQUALS_TGID", "output.final_capture.kib.max": "2048", "output.write_ceiling": "NOT_CLAIMED",
         "all_writers.individually_bounded": "1", "application.boundary": "effective-mount-exact-squashfs,ro",
         "process_pid_above_scan_max": "NOT_INSPECTED", "fd_number_above_max": "NOT_INSPECTED",
     }
@@ -402,14 +421,15 @@ def analyze(root: Path) -> dict[str, object]:
         {"schema", "scope", "interfaces", "device_candidates", "processes_inspected", "fd_links_inspected", "matched_owners", "library_bytes"},
         "summary",
     )
-    if summary["schema"] != "2" or summary["scope"] != "w176-stage4a-can-mcu-topology" or any(
+    if summary["schema"] != "3" or summary["scope"] != "w176-stage4a-can-mcu-topology" or any(
         not summary[key].isdigit() for key in set(summary) - {"schema", "scope"}
     ):
         raise InvalidCapture("invalid summary values")
 
     interfaces = _parse_interfaces(_read_text(root, "network/interfaces.txt", FIXED_LIMITS["network/interfaces.txt"]))
     devices = _parse_devices(_read_text(root, "devices/device-nodes.txt", FIXED_LIMITS["devices/device-nodes.txt"]))
-    owned_paths = _parse_owners(_read_text(root, "processes/owners.txt", FIXED_LIMITS["processes/owners.txt"]), owner_kinds)
+    leaders = _parse_leaders(_read_text(root, "processes/leaders.txt", FIXED_LIMITS["processes/leaders.txt"]))
+    owned_paths, owner_starts = _parse_owners(_read_text(root, "processes/owners.txt", FIXED_LIMITS["processes/owners.txt"]), owner_kinds)
     counts = {key: int(value) for key, value in summary.items() if key not in {"schema", "scope"}}
     ceilings = {"interfaces": 32, "device_candidates": 18, "processes_inspected": 256,
                 "fd_links_inspected": 4096, "matched_owners": 16, "library_bytes": 720896}
@@ -424,10 +444,14 @@ def analyze(root: Path) -> dict[str, object]:
         raise InvalidCapture("invalid OPTIONAL records")
     if int(status["optional_findings"]) != len(optional_lines):
         raise InvalidCapture("OPTIONAL count conflicts with status")
-    if counts["interfaces"] != len(interfaces) or counts["device_candidates"] != len(devices) or counts["matched_owners"] != len(owner_kinds) or counts["library_bytes"] != library_bytes:
+    if (counts["interfaces"] != len(interfaces) or counts["device_candidates"] != len(devices)
+            or counts["processes_inspected"] != len(leaders)
+            or counts["matched_owners"] != len(owner_kinds) or counts["library_bytes"] != library_bytes):
         raise InvalidCapture("summary counts conflict with evidence")
+    if any(leaders.get(pid) != start for pid, start in owner_starts.items()):
+        raise InvalidCapture("owner lacks matching retained leader identity")
     owner_records = len(_read_text(root, "processes/owners.txt", 131072).splitlines())
-    if counts["processes_inspected"] < len(owner_kinds) or counts["fd_links_inspected"] < owner_records:
+    if counts["fd_links_inspected"] < owner_records:
         raise InvalidCapture("scan counts smaller than retained ownership evidence")
     # A copied capture need not preserve FAT allocation units. Logical byte
     # count is an independent lower-bound acceptance check, not du equivalence.

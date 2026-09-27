@@ -72,6 +72,11 @@ maintained in `docs/platform/w176-patchability.md`.
   observations are not validated topology evidence. See
   `docs/platform/w176-stage4a-physical-attempts.md`. TGID-aware remediation is
   required before another independent review or physical decision.
+- CONFIRMED host-only: the exact frozen physical candidate counts addressable
+  non-leader TIDs as distinct owners in a synthetic one-TGID/many-TID fixture,
+  reproducing `owner_limit`. A new candidate reads bounded kernel TGID and
+  selects process leaders only. The physical grouping of partial returned
+  identities remains UNKNOWN; see `docs/platform/w176-stage4a-tgid-remediation.md`.
 - CONFIRMED host-only: the Stage-4B 5,556-byte proof daemon has SHA-256
   `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`.
   Two clean pinned-toolchain builds match and the complete static ELF/ABI/
