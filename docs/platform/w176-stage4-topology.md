@@ -3,9 +3,11 @@
 Status: the independently approved candidate `17557e6481d68799712779ca605b87e2da866e47`
 was physically attempted and failed closed at `owner_limit`. No valid Stage-4A
 topology result exists. See `w176-stage4a-physical-attempts.md` for the
-operator-returned evidence, and `w176-stage4a-remediation-round2.md` for the
-prior host safety work. A process/TGID remediation requires a new independent
-review; there is no current physical GO.
+operator-returned evidence. Frozen TGID-aware v4 candidate
+`d0f5d7ad651953f607414de956f24bff2d8889f9` then received independent
+NO-GO for an exited-leader/empty-FD coverage flaw; see
+`w176-stage4a-v4-no-go.md`. A lifecycle-aware revision requires a fresh
+independent review; there is no current physical GO.
 
 ## Exact scope
 
@@ -16,11 +18,16 @@ It captures only:
 - `stat`/`lstat`, symlink, major/minor, permission, and sysfs associations for
   `/dev/canbox_protocol_dev`, `/dev/hc_mcu_dev`, `/dev/can0`..`can7`, and
   `/dev/ttyS0`..`ttyS7`;
-- bounded `/proc/<pid>/fd` symlink correlation over PIDs 1..4096 and FD numbers
-  0..127 **only for kernel-reported TGID leaders**, with metadata collection
-  bracketed by TGID, PID start-time, FD-target, and safe FD-stat checks;
+- bounded `/proc/<pid>/fd` symlink correlation over IDs 1..4096 and FD numbers
+  0..127 **only for kernel-reported TGID leaders** whose status is live before
+  and after the complete FD scan; TGID, PID start-time, FD-target, and safe
+  FD-stat checks bracket positive owner metadata;
+- process-level staging of owner FD rows and comm/cmdline/exe/maps: none are
+  retained unless the whole leader scan passes post-scan lifecycle validation;
 - a bounded checksum-covered process-leader roster so the analyser can verify
   `processes_inspected` exactly and require every owner to be a retained leader;
+- explicit checksum-covered COMPLETE/PARTIAL process-FD coverage, with no
+  negative ownership claim when any leader is uninspectable or races;
 - bounded `comm`, `cmdline`, `exe` symlink, and `maps` only for matched
   production owners; and
 - regular/non-symlink metadata preflight inside the physically confirmed
@@ -64,7 +71,7 @@ open.
 
 Every checksum command now runs separately from parsing, and nonzero, empty,
 malformed, truncated, multi-field, and unexpected-path output fails closed.
-The schema-2 analyser derives dynamic owner evidence from the bounded inventory
+The analyser derives dynamic owner evidence from the bounded inventory
 and requires exactly one checksum for the complete canonical evidence set,
 including the inventory, status, errors, optional findings, and final COMPLETE
 contents. The checksum manifest cannot recursively checksum itself; its exact
@@ -86,8 +93,9 @@ complete audit and theoretical pre-acceptance byte bound are in the round-2
 record. PIDs above 4096 and FD numbers above 127
 are explicitly `NOT_INSPECTED`, not evidence of absence.
 
-The TGID-aware candidate and its host fixture evidence are described in
-`w176-stage4a-tgid-remediation.md`. The installed library sizes confirmed by
+The frozen TGID-aware v4 candidate and its host fixture evidence are described
+in `w176-stage4a-tgid-remediation.md`; the lifecycle follow-up is in
+`w176-stage4a-lifecycle-remediation.md`. The installed library sizes confirmed by
 Stage 2 (287,536 and 213,496 bytes)
 fit those individual limits.
 
@@ -117,6 +125,9 @@ fixtures run in the disposable privileged native Linux test environment.
 - readlink equality and FD stat metadata reduce races but do not identify an
   immutable kernel open-file object. A changed bracket is discarded rather
   than attributed.
+- `process_fd_coverage=PARTIAL` means one or more leaders/tasks could not be
+  safely covered; retained owner paths are positive observations only. Even
+  COMPLETE is limited to IDs 1..4096 and FDs 0..127, not global absence proof.
 
 The real arming marker is absent. The attempted capture was INCOMPLETE, so the
 installed CAN/MCU topology remains UNKNOWN. A revised payload requires a fresh

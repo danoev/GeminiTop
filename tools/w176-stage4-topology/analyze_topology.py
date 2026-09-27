@@ -418,19 +418,20 @@ def analyze(root: Path) -> dict[str, object]:
 
     summary = _parse_exact_kv(
         _read_text(root, "SUMMARY.txt", FIXED_LIMITS["SUMMARY.txt"]),
-        {"schema", "scope", "interfaces", "device_candidates", "processes_inspected", "fd_links_inspected", "matched_owners", "library_bytes"},
+        {"schema", "scope", "interfaces", "device_candidates", "processes_inspected", "fd_links_inspected", "matched_owners", "process_fd_coverage", "library_bytes"},
         "summary",
     )
-    if summary["schema"] != "3" or summary["scope"] != "w176-stage4a-can-mcu-topology" or any(
-        not summary[key].isdigit() for key in set(summary) - {"schema", "scope"}
-    ):
+    if (summary["schema"] != "4" or summary["scope"] != "w176-stage4a-can-mcu-topology"
+            or summary["process_fd_coverage"] not in {"COMPLETE", "PARTIAL"} or any(
+        not summary[key].isdigit() for key in set(summary) - {"schema", "scope", "process_fd_coverage"}
+    )):
         raise InvalidCapture("invalid summary values")
 
     interfaces = _parse_interfaces(_read_text(root, "network/interfaces.txt", FIXED_LIMITS["network/interfaces.txt"]))
     devices = _parse_devices(_read_text(root, "devices/device-nodes.txt", FIXED_LIMITS["devices/device-nodes.txt"]))
     leaders = _parse_leaders(_read_text(root, "processes/leaders.txt", FIXED_LIMITS["processes/leaders.txt"]))
     owned_paths, owner_starts = _parse_owners(_read_text(root, "processes/owners.txt", FIXED_LIMITS["processes/owners.txt"]), owner_kinds)
-    counts = {key: int(value) for key, value in summary.items() if key not in {"schema", "scope"}}
+    counts = {key: int(value) for key, value in summary.items() if key not in {"schema", "scope", "process_fd_coverage"}}
     ceilings = {"interfaces": 32, "device_candidates": 18, "processes_inspected": 256,
                 "fd_links_inspected": 4096, "matched_owners": 16, "library_bytes": 720896}
     if any(counts[key] > ceiling for key, ceiling in ceilings.items()):
@@ -444,6 +445,15 @@ def analyze(root: Path) -> dict[str, object]:
         raise InvalidCapture("invalid OPTIONAL records")
     if int(status["optional_findings"]) != len(optional_lines):
         raise InvalidCapture("OPTIONAL count conflicts with status")
+    coverage_prefixes = (
+        "pid_status_unusable:", "pid_tgid_invalid:", "pid_tgid_outside_scan:",
+        "pid_race:", "process_leader_uninspectable:", "leader_fd_unavailable:",
+        "fd_disappeared:", "fd_stat_race:", "owner_race_unusable:",
+        "process_leader_race:",
+    )
+    has_coverage_gap = any(line.split("=", 1)[1].startswith(coverage_prefixes) for line in optional_lines)
+    if (summary["process_fd_coverage"] == "PARTIAL") != has_coverage_gap:
+        raise InvalidCapture("process FD coverage conflicts with optional evidence")
     if (counts["interfaces"] != len(interfaces) or counts["device_candidates"] != len(devices)
             or counts["processes_inspected"] != len(leaders)
             or counts["matched_owners"] != len(owner_kinds) or counts["library_bytes"] != library_bytes):
@@ -475,10 +485,12 @@ def analyze(root: Path) -> dict[str, object]:
         description = "UNKNOWN architecture; metadata may support an MCU translation-path INFERENCE"
 
     return {
-        "schema": 2,
+        "schema": 3,
         "capture_validation": "PASS",
         "integrity_model": "CONSISTENCY_ONLY_NOT_AUTHENTICATION",
         "verified_checksums": checksum_count,
+        "process_fd_owner_coverage": summary["process_fd_coverage"],
+        "ownership_absence_claim": "NOT_AVAILABLE" if has_coverage_gap else "NOT_ESTABLISHED_BEYOND_REVIEWED_SCAN",
         "classification": classification,
         "description": description,
         "evidence": {

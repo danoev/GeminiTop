@@ -109,6 +109,34 @@ class Round2Tests(unittest.TestCase):
                 finally:
                     fixture.cleanup()
 
+    def test_exact_1024_mount_records_with_or_without_newline(self):
+        mount_file = self.fixture.proc / "self/mounts"
+        base = mount_file.read_text().splitlines()
+        library = (self.fixture.target / "application/lib/libappframework.so.1.0.0").resolve()
+        application = (self.fixture.target / "application").resolve()
+        guard = self.fixture.usb / "library_mount_guard.sh"
+        env = dict(os.environ, PATH=f"{self.fixture.bin}:{os.environ.get('PATH', '')}")
+
+        def check(lines, trailing_newline):
+            mount_file.write_text("\n".join(lines) + ("\n" if trailing_newline else ""))
+            return subprocess.run(["/bin/sh", str(guard), str(library), str(application), str(mount_file)],
+                                  env=env, capture_output=True, text=True, timeout=5)
+
+        valid = base + [f"source /unrelated/{number} tmpfs ro 0 0" for number in range(1022)]
+        self.assertEqual(len(valid), 1024)
+        for trailing_newline in (False, True):
+            with self.subTest(trailing_newline=trailing_newline):
+                result = check(valid, trailing_newline)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), str(library))
+        for extra in (
+            ["source /unrelated/1025 tmpfs ro 0 0"],
+            ["source /" + ("x" * 4096) + " tmpfs ro 0 0"],
+            ["source /malformed tmpfs ro 0"],
+        ):
+            with self.subTest(extra=extra[0][:50]):
+                self.assertNotEqual(check(valid + extra, True).returncode, 0)
+
     def test_final_failure_count_gate_blocks_complete(self):
         self.fixture.replace('    [ "$FAILURES" -eq 0 ] || finish_incomplete\n'
                              '    # Exact hashed temp is renamed LAST.',

@@ -93,8 +93,9 @@ class TGIDOwnerTests(unittest.TestCase):
         self.assertFalse((root / "COMPLETE").exists())
 
     def test_malformed_missing_duplicate_nonnumeric_tgid_are_optional_skips(self):
-        for status in ("Name:\tx\n", "Tgid:\t700\nTgid:\t700\n", "Tgid:\tbogus\n",
-                       "Tgid:\t700\n" + ("x" * 8200)):
+        prefix = "Name:\tx\nState:\tS (sleeping)\n"
+        for status in (prefix, prefix + "Tgid:\t700\nTgid:\t700\n", prefix + "Tgid:\tbogus\n",
+                       prefix + "Tgid:\t700\n" + ("x" * 8200)):
             with self.subTest(status=status[:30]):
                 fixture = Fixture()
                 try:
@@ -111,9 +112,9 @@ class TGIDOwnerTests(unittest.TestCase):
 
     def test_tgid_changes_after_metadata_discards_owner(self):
         self.add_group(700)
-        marker = "                # AFTER bracket: still the same leader, start time, FD target,\n"
+        marker = "                # Per-FD identity bracket; the whole group is still staged.\n"
         self.fixture.replace(marker,
-            "                printf 'Name: x\\nTgid: 701\\nPid: 700\\n' > \"$PDIR/status\"\n" + marker)
+            "                printf 'Name: x\\nState: S (sleeping)\\nTgid: 701\\nPid: 700\\n' > \"$PDIR/status\"\n" + marker)
         root = self.completed()
         self.assertEqual((root / "processes/owners.txt").read_text(), "")
         self.assertIn("owner_race_unusable:700:7", (root / "OPTIONAL.txt").read_text())
@@ -149,7 +150,7 @@ class TGIDOwnerTests(unittest.TestCase):
 
     def test_leader_pid_reuse_discards_owner(self):
         self.add_group(700)
-        marker = "                # AFTER bracket: still the same leader, start time, FD target,\n"
+        marker = "                # Per-FD identity bracket; the whole group is still staged.\n"
         replacement = self.fixture.write_stat(700, 999999).strip()
         self.fixture.replace(marker,
             f"                printf '%s\\n' '{replacement}' > \"$PDIR/stat\"\n" + marker)

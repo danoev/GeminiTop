@@ -295,9 +295,11 @@ only bounded network/sysfs/device metadata, existing process-FD ownership, and
 two installed libraries for off-target static analysis. It never opens a
 candidate device stream. Its reviewed Stage-4A candidate was physically
 attempted but returned `INCOMPLETE` at `owner_limit`; no valid topology result
-exists. See `docs/platform/w176-stage4a-physical-attempts.md`. A revised
-process/TGID-aware candidate needs a fresh independent safety review before
-any further physical decision.
+exists. See `docs/platform/w176-stage4a-physical-attempts.md`. The subsequent
+TGID-aware v4 candidate received independent NO-GO because an exited leader
+could appear to have an empty FD directory while workers remained live. The
+lifecycle-aware revision needs a fresh independent safety review before any
+further physical decision. See `docs/platform/w176-stage4a-v4-no-go.md`.
 
 ---
 

@@ -77,6 +77,14 @@ maintained in `docs/platform/w176-patchability.md`.
   reproducing `owner_limit`. A new candidate reads bounded kernel TGID and
   selects process leaders only. The physical grouping of partial returned
   identities remains UNKNOWN; see `docs/platform/w176-stage4a-tgid-remediation.md`.
+- INDEPENDENT REVIEW RESULT: frozen TGID-aware v4 candidate
+  `d0f5d7ad651953f607414de956f24bff2d8889f9` received NO-GO. A live
+  worker can retain an FD after its leader exits, while the leader's existing
+  FD directory appears empty. V4 could count that as a clean zero-owner scan.
+  See `docs/platform/w176-stage4a-v4-no-go.md`. The lifecycle-aware revision
+  retains leader-only enumeration, stages owner evidence until post-scan
+  validation, and marks incomplete process-FD coverage PARTIAL. This is
+  host-only and requires a new independent review; no further vehicle action.
 - CONFIRMED host-only: the Stage-4B 5,556-byte proof daemon has SHA-256
   `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`.
   Two clean pinned-toolchain builds match and the complete static ELF/ABI/

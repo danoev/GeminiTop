@@ -183,15 +183,17 @@ capture_text() {
 
 bounded_readlink() {
     LINK_PATH=$1; LINK_TEMP=$2
-    rm -f "$LINK_TEMP" 2>/dev/null || return 1
-    if readlink "$LINK_PATH" > "$LINK_TEMP" 2>/dev/null; then :; else return 1; fi
-    is_regular_nonsymlink "$LINK_TEMP" || return 1
-    LINK_SIZE=$(stat -L -c '%s' "$LINK_TEMP" 2>/dev/null) || return 1
-    [ "$LINK_SIZE" -ge 1 ] && [ "$LINK_SIZE" -le $((MAX_SYMLINK_BYTES + 1)) ] || return 1
-    if awk 'NR == 1 { value=$0 } NR > 1 { exit 1 } END { if (NR != 1) exit 1; print value }' \
-        "$LINK_TEMP" > "$LINK_TEMP.value"; then :; else return 1; fi
-    IFS= read -r LINK_VALUE < "$LINK_TEMP.value" 2>/dev/null || return 1
+    rm -f "$LINK_TEMP" "$LINK_TEMP.value" 2>/dev/null || return 1
+    LINK_VALID=0
+    if readlink "$LINK_PATH" > "$LINK_TEMP" 2>/dev/null &&
+       is_regular_nonsymlink "$LINK_TEMP" &&
+       LINK_SIZE=$(stat -L -c '%s' "$LINK_TEMP" 2>/dev/null) &&
+       [ "$LINK_SIZE" -ge 1 ] && [ "$LINK_SIZE" -le $((MAX_SYMLINK_BYTES + 1)) ] &&
+       awk 'NR == 1 { value=$0 } NR > 1 { exit 1 } END { if (NR != 1) exit 1; print value }' \
+           "$LINK_TEMP" > "$LINK_TEMP.value" &&
+       IFS= read -r LINK_VALUE < "$LINK_TEMP.value" 2>/dev/null; then LINK_VALID=1; fi
     rm -f "$LINK_TEMP" "$LINK_TEMP.value" || return 1
+    [ "$LINK_VALID" -eq 1 ]
 }
 
 capture_text proc_net_dev "$TARGET_ROOT/proc/net/dev" "$MAX_TEXT_BYTES" network/proc-net-dev.txt required
@@ -292,25 +294,40 @@ read_start_time() {
     [ "${#START_TIME}" -le 20 ] || return 1
 }
 
-# /proc/<tid> is directly addressable even for a non-leader. Read bounded
-# kernel status before deciding whether a numeric ID is a process leader.
-read_tgid() {
-    TGID_SOURCE=$1/status; TGID_TEMP=.proc-status.tmp; TGID_VALUE=.proc-tgid.tmp
-    [ -f "$TGID_SOURCE" ] && [ ! -L "$TGID_SOURCE" ] || return 1
-    rm -f "$TGID_TEMP" "$TGID_VALUE" 2>/dev/null || return 1
+# /proc/<tid> is directly addressable even for a non-leader. One bounded
+# kernel status read supplies both the thread-group identity and task state.
+read_task_status() {
+    TASK_SOURCE=$1/status; TASK_TEMP=.proc-status.tmp; TASK_VALUE=.proc-task-value.tmp
+    [ -f "$TASK_SOURCE" ] && [ ! -L "$TASK_SOURCE" ] || return 1
+    rm -f "$TASK_TEMP" "$TASK_VALUE" 2>/dev/null || return 1
     # Three bounded records cover short proc reads without per-byte FAT writes.
-    dd if="$TGID_SOURCE" of="$TGID_TEMP" bs=4096 count=3 2>/dev/null || return 1
-    TGID_SIZE=$(stat -c '%s' "$TGID_TEMP" 2>/dev/null) || return 1
-    [ "$TGID_SIZE" -gt 0 ] && [ "$TGID_SIZE" -le 8192 ] || return 1
+    dd if="$TASK_SOURCE" of="$TASK_TEMP" bs=4096 count=3 2>/dev/null || return 1
+    TASK_SIZE=$(stat -c '%s' "$TASK_TEMP" 2>/dev/null) || return 1
+    [ "$TASK_SIZE" -gt 0 ] && [ "$TASK_SIZE" -le 8192 ] || return 1
     awk '
         /^Tgid:/ {
-            count++; value=substr($0, 6); gsub(/^[ \t]+|[ \t]+$/, "", value)
-            if (value !~ /^[0-9]+$/ || length(value)>20) bad=1
+            tgids++; tgid=substr($0, 6); gsub(/^[ \t]+|[ \t]+$/, "", tgid)
+            if (tgid !~ /^[0-9]+$/ || length(tgid)>20) bad=1
         }
-        END { if (count!=1 || bad) exit 1; print value }
-    ' "$TGID_TEMP" > "$TGID_VALUE" || return 1
-    IFS= read -r TGID < "$TGID_VALUE" 2>/dev/null || return 1
-    [ -n "$TGID" ] || return 1
+        /^State:/ {
+            states++; value=substr($0, 7); gsub(/^[ \t]+|[ \t]+$/, "", value)
+            if (value !~ /^[A-Za-z] \([^()]+\)$/) bad=1
+            state=substr(value, 1, 1)
+        }
+        END { if (tgids!=1 || states!=1 || bad) exit 1; print tgid "|" state }
+    ' "$TASK_TEMP" > "$TASK_VALUE" || return 1
+    IFS= read -r TASK_PAIR < "$TASK_VALUE" 2>/dev/null || return 1
+    case "$TASK_PAIR" in *'|'*) TGID=${TASK_PAIR%%|*}; TASK_STATE=${TASK_PAIR#*|} ;; *) return 1 ;; esac
+    [ -n "$TGID" ] && [ "${#TASK_STATE}" -eq 1 ] || return 1
+}
+
+task_state_live() {
+    case "$TASK_STATE" in R|S|D|T|t|I) return 0 ;; *) return 1 ;; esac
+}
+
+record_coverage_gap() {
+    PROCESS_FD_COVERAGE=PARTIAL
+    record_optional "$1"
 }
 
 stage_owner_text() {
@@ -333,84 +350,117 @@ commit_owner_file() {
 : > processes/owners.txt || record_failure "owners_create"
 : > processes/leaders.txt || record_failure "leaders_create"
 : > .owners-seen || record_failure "owner_state_create"
-PROCESS_COUNT=0; TOTAL_FD_LINKS=0; OWNER_COUNT=0; TOTAL_MAPS=0
+PROCESS_COUNT=0; TOTAL_FD_LINKS=0; OWNER_COUNT=0; TOTAL_MAPS=0; PROCESS_FD_COVERAGE=COMPLETE
+cleanup_leader_stage() {
+    rm -f .leader-fds.tmp \
+        ".owner-$PID-comm.tmp" ".owner-$PID-cmdline.tmp" ".owner-$PID-maps.tmp" \
+        ".owner-$PID-exe.tmp" ".owner-$PID-exe-link.tmp" ".owner-$PID-exe-link.tmp.value" \
+        .fd-link-before.tmp .fd-link-before.tmp.value \
+        .fd-link-after.tmp .fd-link-after.tmp.value
+}
 PID=1
 while [ "$PID" -le "$PID_SCAN_MAX" ]; do
     PDIR="$PROCESS_ROOT/$PID"
     if [ -d "$PDIR" ] && [ ! -L "$PDIR" ]; then
-        if ! read_tgid "$PDIR"; then record_optional "pid_status_unusable:$PID"; PID=$((PID + 1)); continue; fi
-        case "$TGID" in 0|0*) record_optional "pid_tgid_invalid:$PID"; PID=$((PID + 1)); continue ;; esac
+        if ! read_task_status "$PDIR"; then record_coverage_gap "pid_status_unusable:$PID"; PID=$((PID + 1)); continue; fi
+        case "$TGID" in 0|0*) record_coverage_gap "pid_tgid_invalid:$PID"; PID=$((PID + 1)); continue ;; esac
         if [ "${#TGID}" -gt 4 ] || [ "$TGID" -gt "$PID_SCAN_MAX" ]; then
-            record_optional "pid_tgid_outside_scan:$PID"; PID=$((PID + 1)); continue
+            record_coverage_gap "pid_tgid_outside_scan:$PID"; PID=$((PID + 1)); continue
         fi
         [ "$TGID" -eq "$PID" ] || { PID=$((PID + 1)); continue; }
-        if read_start_time "$PDIR"; then START_BEFORE=$START_TIME; else record_optional "pid_race:$PID"; PID=$((PID + 1)); continue; fi
-        [ -d "$PDIR/fd" ] && [ ! -L "$PDIR/fd" ] || {
-            record_optional "leader_fd_unavailable:$PID"; PID=$((PID + 1)); continue
+        if ! task_state_live; then
+            record_coverage_gap "process_leader_uninspectable:$PID:$TASK_STATE"; PID=$((PID + 1)); continue
+        fi
+        if read_start_time "$PDIR"; then START_BEFORE=$START_TIME; else record_coverage_gap "pid_race:$PID"; PID=$((PID + 1)); continue; fi
+        [ -d "$PDIR/fd" ] && [ ! -L "$PDIR/fd" ] && [ -r "$PDIR/fd" ] && [ -x "$PDIR/fd" ] || {
+            record_coverage_gap "leader_fd_unavailable:$PID"; PID=$((PID + 1)); continue
         }
-        PROCESS_COUNT=$((PROCESS_COUNT + 1))
-        [ "$PROCESS_COUNT" -le "$MAX_PROCESSES" ] || { record_failure "process_limit"; break; }
-        append_bounded processes/leaders.txt 16384 "$PID|$PID|$START_BEFORE" || record_failure "leaders_write"
+        cleanup_leader_stage || { record_failure "leader_stage_cleanup:$PID"; break; }
+        : > .leader-fds.tmp || { record_failure "leader_stage_create:$PID"; break; }
+        LEADER_FD_LINKS=0; LEADER_HAS_OWNER=0; LEADER_UNUSABLE=0
         [ "$FAILURES" -eq 0 ] || break
         FD_NUMBER=0
         while [ "$FD_NUMBER" -le "$FD_NUMBER_MAX" ]; do
             FD_PATH="$PDIR/fd/$FD_NUMBER"
             if [ -L "$FD_PATH" ]; then
-                TOTAL_FD_LINKS=$((TOTAL_FD_LINKS + 1))
-                [ "$TOTAL_FD_LINKS" -le "$MAX_TOTAL_FD_LINKS" ] || { record_failure "total_fd_limit"; break; }
-                if ! bounded_readlink "$FD_PATH" .fd-link-before.tmp; then record_optional "fd_disappeared:$PID:$FD_NUMBER"; FD_NUMBER=$((FD_NUMBER + 1)); continue; fi
+                LEADER_FD_LINKS=$((LEADER_FD_LINKS + 1))
+                [ $((TOTAL_FD_LINKS + LEADER_FD_LINKS)) -le "$MAX_TOTAL_FD_LINKS" ] || { record_failure "total_fd_limit"; break; }
+                if ! bounded_readlink "$FD_PATH" .fd-link-before.tmp; then
+                    record_coverage_gap "fd_disappeared:$PID:$FD_NUMBER"; LEADER_UNUSABLE=1; break
+                fi
                 TARGET_BEFORE=$LINK_VALUE
                 if ! matches_candidate "$TARGET_BEFORE"; then FD_NUMBER=$((FD_NUMBER + 1)); continue; fi
                 LOGICAL_TARGET=$MATCHED_LOGICAL
-                FD_ID_BEFORE=$(stat -L -c '%d|%i|%f' "$FD_PATH" 2>/dev/null) || { record_optional "fd_stat_race:$PID:$FD_NUMBER"; FD_NUMBER=$((FD_NUMBER + 1)); continue; }
-                OWNER_NEW=0
-                OWNER_WAS_NEW=0
-                if ! grep -F -x "$PID|$START_BEFORE" .owners-seen >/dev/null 2>&1; then
-                    OWNER_NEW=1
-                    OWNER_WAS_NEW=1
-                    OWNER_COUNT=$((OWNER_COUNT + 1))
-                    [ "$OWNER_COUNT" -le "$MAX_OWNERS" ] || { record_failure "owner_limit"; break; }
-                    stage_owner_text "$PDIR/comm" 4096 ".owner-$PID-comm.tmp" || OWNER_NEW=-1
-                    stage_owner_text "$PDIR/cmdline" 16384 ".owner-$PID-cmdline.tmp" || OWNER_NEW=-1
-                    stage_owner_text "$PDIR/maps" "$MAX_MAPS_PER_PROCESS" ".owner-$PID-maps.tmp" || OWNER_NEW=-1
-                    if bounded_readlink "$PDIR/exe" ".owner-$PID-exe-link.tmp"; then printf '%s\n' "$LINK_VALUE" > ".owner-$PID-exe.tmp" || OWNER_NEW=-1; else OWNER_NEW=-1; fi
+                FD_ID_BEFORE=$(stat -L -c '%d|%i|%f' "$FD_PATH" 2>/dev/null) || {
+                    record_coverage_gap "fd_stat_race:$PID:$FD_NUMBER"; LEADER_UNUSABLE=1; break
+                }
+                if [ "$LEADER_HAS_OWNER" -eq 0 ]; then
+                    if stage_owner_text "$PDIR/comm" 4096 ".owner-$PID-comm.tmp" &&
+                       stage_owner_text "$PDIR/cmdline" 16384 ".owner-$PID-cmdline.tmp" &&
+                       stage_owner_text "$PDIR/maps" "$MAX_MAPS_PER_PROCESS" ".owner-$PID-maps.tmp" &&
+                       bounded_readlink "$PDIR/exe" ".owner-$PID-exe-link.tmp" &&
+                       printf '%s\n' "$LINK_VALUE" > ".owner-$PID-exe.tmp"; then
+                        LEADER_HAS_OWNER=1
+                    else
+                        record_coverage_gap "owner_race_unusable:$PID:$FD_NUMBER"; LEADER_UNUSABLE=1; break
+                    fi
                 fi
-                # AFTER bracket: still the same leader, start time, FD target,
-                # and safe descriptor metadata must all match.
-                if ! read_tgid "$PDIR"; then OWNER_NEW=-1
-                elif [ "$TGID" != "$PID" ]; then OWNER_NEW=-1
-                elif ! read_start_time "$PDIR"; then OWNER_NEW=-1
-                elif [ "$START_TIME" != "$START_BEFORE" ]; then OWNER_NEW=-1
-                elif ! bounded_readlink "$FD_PATH" .fd-link-after.tmp; then OWNER_NEW=-1
-                elif [ "$LINK_VALUE" != "$TARGET_BEFORE" ]; then OWNER_NEW=-1
-                else
-                    FD_ID_AFTER=$(stat -L -c '%d|%i|%f' "$FD_PATH" 2>/dev/null) || OWNER_NEW=-1
-                    [ "$OWNER_NEW" -eq -1 ] || [ "$FD_ID_AFTER" = "$FD_ID_BEFORE" ] || OWNER_NEW=-1
+                # Per-FD identity bracket; the whole group is still staged.
+                if ! read_task_status "$PDIR" || [ "$TGID" != "$PID" ] || ! task_state_live ||
+                   ! read_start_time "$PDIR" || [ "$START_TIME" != "$START_BEFORE" ] ||
+                   ! bounded_readlink "$FD_PATH" .fd-link-after.tmp || [ "$LINK_VALUE" != "$TARGET_BEFORE" ]; then
+                    record_coverage_gap "owner_race_unusable:$PID:$FD_NUMBER"; LEADER_UNUSABLE=1; break
                 fi
-                if [ "$OWNER_NEW" -eq -1 ]; then
-                    rm -f ".owner-$PID-comm.tmp" ".owner-$PID-cmdline.tmp" ".owner-$PID-maps.tmp" ".owner-$PID-exe.tmp" ".owner-$PID-exe-link.tmp" ".owner-$PID-exe-link.tmp.value" 2>/dev/null || record_failure owner_race_cleanup
-                    record_optional "owner_race_unusable:$PID:$FD_NUMBER"
-                    [ "$OWNER_WAS_NEW" -eq 0 ] || OWNER_COUNT=$((OWNER_COUNT - 1))
-                    FD_NUMBER=$((FD_NUMBER + 1)); continue
+                FD_ID_AFTER=$(stat -L -c '%d|%i|%f' "$FD_PATH" 2>/dev/null) || {
+                    record_coverage_gap "owner_race_unusable:$PID:$FD_NUMBER"; LEADER_UNUSABLE=1; break
+                }
+                if [ "$FD_ID_AFTER" != "$FD_ID_BEFORE" ]; then
+                    record_coverage_gap "owner_race_unusable:$PID:$FD_NUMBER"; LEADER_UNUSABLE=1; break
                 fi
-                if [ "$OWNER_NEW" -eq 1 ]; then
-                    MAP_SIZE=$(stat -L -c '%s' ".owner-$PID-maps.tmp" 2>/dev/null) || { record_failure "owner_maps_size:$PID"; break; }
-                    TOTAL_MAPS=$((TOTAL_MAPS + MAP_SIZE))
-                    [ "$TOTAL_MAPS" -le "$MAX_TOTAL_MAPS" ] || { record_failure "total_maps_limit"; break; }
-                    commit_owner_file "owner_comm_$PID" "$PDIR/comm" ".owner-$PID-comm.tmp" "processes/$PID-comm.txt"
-                    commit_owner_file "owner_cmdline_$PID" "$PDIR/cmdline" ".owner-$PID-cmdline.tmp" "processes/$PID-cmdline.bin"
-                    commit_owner_file "owner_exe_$PID" "$PDIR/exe" ".owner-$PID-exe.tmp" "processes/$PID-exe.txt"
-                    commit_owner_file "owner_maps_$PID" "$PDIR/maps" ".owner-$PID-maps.tmp" "processes/$PID-maps.txt"
-                    append_bounded .owners-seen 4096 "$PID|$START_BEFORE" || record_failure "owner_state_write"
-                fi
-                append_bounded processes/owners.txt 131072 "$PID|$PID|$START_BEFORE|$FD_NUMBER|$LOGICAL_TARGET" || record_failure "owners_write"
+                append_bounded .leader-fds.tmp 16384 "$PID|$PID|$START_BEFORE|$FD_NUMBER|$LOGICAL_TARGET" || record_failure "leader_fd_stage:$PID"
+                [ "$FAILURES" -eq 0 ] || break
             fi
             FD_NUMBER=$((FD_NUMBER + 1))
         done
+        [ "$FAILURES" -eq 0 ] || break
+        if [ "$LEADER_UNUSABLE" -ne 0 ]; then
+            cleanup_leader_stage || record_failure "leader_stage_cleanup:$PID"
+            PID=$((PID + 1)); continue
+        fi
+        # Only a complete 0..127 scan of the same live leader is retained.
+        if ! read_task_status "$PDIR" || [ "$TGID" != "$PID" ] || ! task_state_live ||
+           ! read_start_time "$PDIR" || [ "$START_TIME" != "$START_BEFORE" ] ||
+           [ ! -d "$PDIR/fd" ] || [ -L "$PDIR/fd" ] || [ ! -r "$PDIR/fd" ] || [ ! -x "$PDIR/fd" ]; then
+            record_coverage_gap "process_leader_race:$PID"
+            cleanup_leader_stage || record_failure "leader_stage_cleanup:$PID"
+            PID=$((PID + 1)); continue
+        fi
+        PROCESS_COUNT=$((PROCESS_COUNT + 1))
+        [ "$PROCESS_COUNT" -le "$MAX_PROCESSES" ] || { record_failure "process_limit"; break; }
+        TOTAL_FD_LINKS=$((TOTAL_FD_LINKS + LEADER_FD_LINKS))
+        append_bounded processes/leaders.txt 16384 "$PID|$PID|$START_BEFORE" || record_failure "leaders_write"
+        [ "$FAILURES" -eq 0 ] || break
+        if [ "$LEADER_HAS_OWNER" -eq 1 ]; then
+            OWNER_COUNT=$((OWNER_COUNT + 1))
+            [ "$OWNER_COUNT" -le "$MAX_OWNERS" ] || { record_failure "owner_limit"; break; }
+            MAP_SIZE=$(stat -L -c '%s' ".owner-$PID-maps.tmp" 2>/dev/null) || { record_failure "owner_maps_size:$PID"; break; }
+            TOTAL_MAPS=$((TOTAL_MAPS + MAP_SIZE))
+            [ "$TOTAL_MAPS" -le "$MAX_TOTAL_MAPS" ] || { record_failure "total_maps_limit"; break; }
+            commit_owner_file "owner_comm_$PID" "$PDIR/comm" ".owner-$PID-comm.tmp" "processes/$PID-comm.txt"
+            commit_owner_file "owner_cmdline_$PID" "$PDIR/cmdline" ".owner-$PID-cmdline.tmp" "processes/$PID-cmdline.bin"
+            commit_owner_file "owner_exe_$PID" "$PDIR/exe" ".owner-$PID-exe.tmp" "processes/$PID-exe.txt"
+            commit_owner_file "owner_maps_$PID" "$PDIR/maps" ".owner-$PID-maps.tmp" "processes/$PID-maps.txt"
+            append_bounded .owners-seen 4096 "$PID|$START_BEFORE" || record_failure "owner_state_write"
+            while IFS= read -r OWNER_ROW; do
+                append_bounded processes/owners.txt 131072 "$OWNER_ROW" || record_failure "owners_write"
+            done < .leader-fds.tmp
+        fi
+        cleanup_leader_stage || record_failure "leader_stage_cleanup:$PID"
     fi
     [ "$FAILURES" -eq 0 ] || break
     PID=$((PID + 1))
 done
+cleanup_leader_stage || record_failure "leader_stage_cleanup_final"
 
 validate_application_boundary() {
     APP_PATH="$TARGET_ROOT/application"
@@ -482,10 +532,11 @@ snapshot_library appframework "$TARGET_ROOT/application/lib/libappframework.so.1
 snapshot_library appmcu "$TARGET_ROOT/application/lib/libappmcucommunication.so.1.0.0" "$MAX_MCU_LIBRARY_BYTES" files/libappmcucommunication.so.1.0.0
 
 printf '%s\n' \
-    "schema=3" "scope=w176-stage4a-can-mcu-topology" \
+    "schema=4" "scope=w176-stage4a-can-mcu-topology" \
     "interfaces=$INTERFACE_COUNT" "device_candidates=$DEVICE_COUNT" \
     "processes_inspected=$PROCESS_COUNT" "fd_links_inspected=$TOTAL_FD_LINKS" \
-    "matched_owners=$OWNER_COUNT" "library_bytes=$TOTAL_LIBRARY_BYTES" > SUMMARY.txt || record_failure "summary_write"
+    "matched_owners=$OWNER_COUNT" "process_fd_coverage=$PROCESS_FD_COVERAGE" \
+    "library_bytes=$TOTAL_LIBRARY_BYTES" > SUMMARY.txt || record_failure "summary_write"
 
 printf '%s\n' \
     "schema=4" "device_streams.opened=0" "can_frames.received=0" \
@@ -511,8 +562,10 @@ if awk 'NR == 1 && NF >= 1 && $1 ~ /^[0-9]+$/ { print $1; ok=1 } END { if (!ok |
 if IFS= read -r OUTPUT_KIB < .du-value.tmp 2>/dev/null; then [ "$OUTPUT_KIB" -le "$MAX_TOTAL_OUTPUT_KIB" ] || record_failure "output_limit"; else record_failure "output_size_missing"; fi
 
 rm -f .interface-names .interface-value.tmp .interface-normal.tmp .interface-link.tmp \
-    .device-candidates.paths .device-link.tmp .sys-device-link.tmp .candidate-match.tmp \
-    .proc-stat.tmp .proc-status.tmp .proc-tgid.tmp .fd-link-before.tmp .fd-link-after.tmp .owners-seen \
+    .interface-link.tmp.value .device-candidates.paths .device-link.tmp .device-link.tmp.value \
+    .sys-device-link.tmp .sys-device-link.tmp.value .candidate-match.tmp \
+    .proc-stat.tmp .proc-status.tmp .proc-task-value.tmp .leader-fds.tmp \
+    .fd-link-before.tmp .fd-link-before.tmp.value .fd-link-after.tmp .fd-link-after.tmp.value .owners-seen \
     .application-mount.tmp .du-output.tmp .du-value.tmp 2>/dev/null || record_failure "temporary_cleanup"
 
 for REQUIRED_OUTPUT in CAPABILITIES.txt SUMMARY.txt network/proc-net-dev.txt network/interfaces.txt devices/device-nodes.txt processes/leaders.txt processes/owners.txt files/libappframework.so.1.0.0 files/libappmcucommunication.so.1.0.0; do

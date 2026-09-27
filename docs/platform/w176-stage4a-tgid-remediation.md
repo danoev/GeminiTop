@@ -1,5 +1,10 @@
 # Stage-4A process/TGID ownership remediation
 
+Historical v4 implementation record. Its leader-only model remains, but the
+later independent NO-GO found that an exited leader can have an existing empty
+FD directory while workers remain alive. See `w176-stage4a-v4-no-go.md` and
+`w176-stage4a-lifecycle-remediation.md` for the revised coverage semantics.
+
 The approved historical physical candidate
 `17557e6481d68799712779ca605b87e2da866e47` failed closed at
 `owner_limit` on its second operator-reported attempt. See

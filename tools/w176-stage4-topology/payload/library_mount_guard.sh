@@ -15,8 +15,9 @@ TABLE=${TABLE%x}
 [ "${#TABLE}" -le 131072 ] || exit 1
 awk -v app="$APP_ROOT" -v source="$CANONICAL" '
     function covers(m, p) { return m == "/" || p == m || index(p, m "/") == 1 }
-    NR > 1024 || length($0) > 4096 { bad=1; exit }
+    length($0) > 4096 { bad=1; exit }
     NF == 0 { next }
+    ++records > 1024 { bad=1; exit }
     NF != 6 { bad=1; exit }
     {
         # Expected paths are unescaped. Reject ambiguous mount tables rather

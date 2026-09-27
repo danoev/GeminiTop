@@ -13,7 +13,9 @@ the exact independently reviewed Stage-3 ARMHF probe also executed natively
 from removable USB and returned zero. Native USB execution is physically proven
 at that narrow boundary. A reviewed Stage-4A topology candidate was physically
 attempted but failed closed at its owner limit; it produced no valid topology
-result. Stage-4B remains a separate host-only non-shadowing residency candidate,
+result. A later TGID-aware Stage-4A candidate received independent NO-GO for
+an exited-leader coverage flaw; a lifecycle-aware host-only revision is under
+review preparation. Stage-4B remains a separate host-only non-shadowing residency candidate,
 and persistent installation is not yet confirmed.
 
 The immediate goal is to understand the installed RoadTop hardware and software

@@ -166,8 +166,9 @@ class Fixture:
         fields = ["S", "1"] + ["0"] * 17 + [str(start)]
         return f"{pid} (fixture owner) " + " ".join(fields) + "\n"
 
-    def write_status(self, pid: int, tgid: int | str | None = None) -> str:
-        return f"Name:\tfixture\nTgid:\t{pid if tgid is None else tgid}\nPid:\t{pid}\n"
+    def write_status(self, pid: int, tgid: int | str | None = None, state: str = "S") -> str:
+        label = {"S": "sleeping", "R": "running", "Z": "zombie", "X": "dead", "x": "dead"}.get(state, "test state")
+        return f"Name:\tfixture\nState:\t{state} ({label})\nTgid:\t{pid if tgid is None else tgid}\nPid:\t{pid}\n"
 
     def add_owner(self, pid: int, target: Path, fd: int = 7, maps_size: int = 32) -> None:
         root = self.proc / "process" / str(pid)
@@ -432,7 +433,7 @@ class Stage4ATests(unittest.TestCase):
         self.assertEqual(report["evidence"]["mcu_translation_path"], "INFERENCE")
 
     def inject_before_after_bracket(self, shell: str) -> None:
-        marker = "                # AFTER bracket: still the same leader, start time, FD target,\n"
+        marker = "                # Per-FD identity bracket; the whole group is still staged.\n"
         self.fixture.replace(marker, shell + "\n" + marker)
 
     def assert_owner_race_discarded(self) -> None:
@@ -462,8 +463,8 @@ class Stage4ATests(unittest.TestCase):
         self.assert_owner_race_discarded()
 
     def test_owner_metadata_capture_failure_is_discarded(self) -> None:
-        needle = '                    stage_owner_text "$PDIR/cmdline" 16384 ".owner-$PID-cmdline.tmp" || OWNER_NEW=-1'
-        replacement = '                    rm -f "$PDIR/cmdline"\n' + needle
+        needle = '                       stage_owner_text "$PDIR/cmdline" 16384 ".owner-$PID-cmdline.tmp" &&'
+        replacement = '                       rm -f "$PDIR/cmdline" &&\n' + needle
         self.fixture.replace(needle, replacement)
         self.assert_owner_race_discarded()
 

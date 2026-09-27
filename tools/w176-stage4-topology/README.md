@@ -37,12 +37,16 @@ The candidate captures:
 - bounded kernel-TGID verification of numeric `/proc/<id>` paths 1..4096;
   non-leader threads do not consume process/owner counts or scan FDs;
 - bounded correlation of process-leader `/proc/<TGID>/fd` symlink destinations,
-  with FD-number range 0..127 and one owner slot per unique leader;
+  with FD-number range 0..127 and one owner slot per unique fully validated
+  live leader; an exited/zombie leader is not counted as inspected;
 - checksum-covered leader roster and explicit `PID|TGID|start|FD|candidate`
   ownership records, cross-checked by the analyser;
 - bounded `comm`, `cmdline`, `exe`, and `maps` data only for matched owners;
-- before/after TGID, PID start-time, FD target, and safe FD-stat bracketing around
-  owner metadata; a changed bracket is discarded as race/unusable;
+- process-level staging of all owner records and metadata until the complete
+  FD scan passes post-scan TGID/live-state/start-time checks; any lifecycle
+  race discards the staged group and marks coverage PARTIAL;
+- per-FD before/after TGID, live state, PID start time, FD target, and safe
+  FD-stat bracketing within that process transaction;
 - pre-open regular/non-symlink checks and confirmation that each exact canonical
   library path is served by the application mount itself (no covering nested
   mount), using bounded `/proc/self/mounts` parsing and matching device identity,
@@ -80,6 +84,11 @@ size limits before reads, validates schemas, requires complete canonical
 checksum coverage, and rejects unexpected files before classification.
 Checksums establish internal capture consistency, not cryptographic
 authentication against deliberate rewriting of both evidence and manifest.
+`SUMMARY.txt` schema 4 reports `process_fd_coverage=COMPLETE|PARTIAL`;
+the analyser exposes that qualification and returns
+`ownership_absence_claim=NOT_AVAILABLE` for PARTIAL captures. Positive owners
+from other fully validated leaders remain usable. Even COMPLETE covers only
+the finite reviewed PID/FD range, not all possible ownership.
 
 The conservative classification policy is:
 
@@ -118,3 +127,8 @@ owner-inflation defect against frozen candidate `17557e6` in a disposable
 single-TGID/many-TID fixture. The new process model, unresolved coverage
 limitations, and operator completion rule are in
 `docs/platform/w176-stage4a-tgid-remediation.md`.
+The later v4 independent NO-GO and exited-leader lifecycle remedy are in
+`docs/platform/w176-stage4a-v4-no-go.md` and
+`docs/platform/w176-stage4a-lifecycle-remediation.md`. Native Linux tests use
+a host-native multithreaded helper and the real kernel `/proc` to verify that
+an exited leader with a live FD-owning worker yields PARTIAL, not false absence.
