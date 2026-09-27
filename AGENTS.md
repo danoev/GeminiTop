@@ -4,7 +4,7 @@
 
 This repository is a Mercedes-Benz-focused engineering fork of [martexas/GeminiTop](https://github.com/martexas/GeminiTop).
 
-Its current purpose is to reverse-engineer, document, and cautiously extend RoadTop Linux display units used in Mercedes-Benz vehicles, with the primary development target being a RoadTop unit installed in a Mercedes-Benz W176 A45 AMG with factory NTG5*1 infotainment.
+Its current purpose is to reverse-engineer, document, and cautiously extend RoadTop Linux display units used in Mercedes-Benz vehicles. The first reference implementation and primary development target is a RoadTop S7-QA Linux display installed in a Mercedes-Benz W176 A45 AMG with factory NTG5*1 infotainment. Other Mercedes-Benz targets require their own compatibility evidence.
 
 This is currently an **engineering and target-identification project**, not a supported Mercedes launcher distribution.
 
@@ -41,22 +41,16 @@ These values are owner-observed and may be treated as **CONFIRMED**.
 
 Do **not** silently infer additional hardware properties from them.
 
-The following are examples of properties which must remain UNKNOWN until directly established on the installed unit:
+The following are examples of properties which remain UNKNOWN until directly established on the installed unit:
 
 - RoadTop board identifier;
 - SoC / board revision;
 - `QD507`, `QD513`, `QD515`, or other marketing/platform identifier;
-- Linux kernel version;
-- partition map;
-- NVM size;
-- framebuffer geometry;
 - framebuffer format;
-- touchscreen controller;
 - MCU protocol details;
 - CAN arbitration IDs;
 - audio hardware;
 - RoadTop local audio output path;
-- USB-handler hash;
 - update compatibility;
 - firmware compatibility.
 
@@ -635,7 +629,16 @@ Mercedes runtime replacement:
 NOT YET APPROVED
 
 Stage-1 physical probe:
-ONLY AFTER THE CURRENT PROBE REVISION PASSES SAFETY REVIEW
+COMPLETE / FROZEN EVIDENCE
+
+Stage-2 physical platform capture:
+COMPLETE / FROZEN EVIDENCE
+
+Stage-3 native ARMHF USB execution:
+COMPLETE FOR THE EXACT REVIEWED BINARY ONLY
+
+Later native or persistent payloads:
+REQUIRE THEIR OWN INDEPENDENT REVIEW
 
 Raw CAN/MCU experimentation:
 NOT PART OF INITIAL DISCOVERY

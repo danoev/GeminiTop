@@ -1,4 +1,8 @@
-# W176 project workstreams
+# Mercedes-Benz platform workstreams — W176 development target
+
+These workstreams begin with the installed W176 + NTG5*1 unit. Findings from
+that target do not establish compatibility with other Mercedes-Benz RoadTop
+installations.
 
 Every item uses one of: CONFIRMED, REFERENCE ONLY, INFERENCE, or UNKNOWN.
 

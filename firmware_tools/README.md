@@ -19,5 +19,6 @@ An `--output` path may not alias the input by pathname, symlink, or hardlink.
 
 The pre-existing `extract_firmware.py`, `validate_firmware.py`,
 `repack_firmware.py`, and GUI are legacy Audi-reference tools with fixed layout
-assumptions. They are deliberately excluded from the Mercedes/W176 workflow.
+assumptions. They are deliberately excluded from the Mercedes-Benz platform
+workflow.
 They must not be used to create vehicle firmware for this project phase.
