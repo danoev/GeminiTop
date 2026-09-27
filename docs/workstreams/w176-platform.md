@@ -55,8 +55,9 @@ maintained in `docs/platform/w176-patchability.md`.
   disposable fixtures. The remediated candidate uses a finite device/PID/FD
   policy, pre-open regular-file checks inside the read-only application mount,
   bracketed owner metadata, and exact canonical checksum coverage. FIFO open
-  sentinels remain untouched. It awaits fresh independent review; no physical
-  Stage-4A run occurred.
+  sentinels remained untouched in host tests. The later frozen candidate was
+  independently reviewed and physically attempted; see the separate failed
+  attempt record below. This sentence describes the earlier host-only state.
 - CONFIRMED host-only: the second frozen Stage-4A candidate
   `11376fc13f61cf0f05a3bfd45ab287e5f42982d0` also received NO-GO.
   All 13 requested reproductions succeeded in disposable fixtures. Round 2
@@ -64,6 +65,13 @@ maintained in `docs/platform/w176-patchability.md`.
   normal proc/sysfs topology handling, independent aggregate/count validation,
   and accurately labelled final output acceptance. This does not authorise a
   physical test or change Stage-4B.
+- OPERATOR-RETURNED PHYSICAL EVIDENCE: Stage-4A candidate
+  `17557e6481d68799712779ca605b87e2da866e47` received independent GO,
+  then two physical attempts. The first was interrupted; the second returned
+  `INCOMPLETE`, `owner_limit`, and no valid COMPLETE. The partial serial/network
+  observations are not validated topology evidence. See
+  `docs/platform/w176-stage4a-physical-attempts.md`. TGID-aware remediation is
+  required before another independent review or physical decision.
 - CONFIRMED host-only: the Stage-4B 5,556-byte proof daemon has SHA-256
   `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`.
   Two clean pinned-toolchain builds match and the complete static ELF/ABI/
@@ -123,5 +131,6 @@ is authorized in this phase.
 Stages 1, 2, and 3 are frozen historical evidence points. Stage-3 native USB
 execution is physically confirmed for the exact reviewed binary; it does not
 approve later payloads. See `docs/platform/w176-stage3-arm-probe.md` and
-`docs/platform/w176-stage3-physical-evidence.md`. Stage-4A and Stage-4B are
-separate host-only review candidates; neither has physical approval.
+`docs/platform/w176-stage3-physical-evidence.md`. The reviewed Stage-4A
+attempt failed closed; its replacement needs its own review. Stage-4B remains
+a separate host-only candidate without physical approval.

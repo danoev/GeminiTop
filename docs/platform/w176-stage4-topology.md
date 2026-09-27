@@ -1,10 +1,11 @@
 # W176 Stage-4A CAN / MCU topology candidate
 
-Status: second independent NO-GO remediated and host-tested; awaiting fresh
-independent review. See
-`w176-stage4a-remediation-round2.md` for the frozen-candidate reproduction,
-transaction/mount changes, writer audit, and regression results. No physical
-run or physical GO.
+Status: the independently approved candidate `17557e6481d68799712779ca605b87e2da866e47`
+was physically attempted and failed closed at `owner_limit`. No valid Stage-4A
+topology result exists. See `w176-stage4a-physical-attempts.md` for the
+operator-returned evidence, and `w176-stage4a-remediation-round2.md` for the
+prior host safety work. A process/TGID remediation requires a new independent
+review; there is no current physical GO.
 
 ## Exact scope
 
@@ -112,5 +113,6 @@ fixtures run in the disposable privileged native Linux test environment.
   immutable kernel open-file object. A changed bracket is discarded rather
   than attributed.
 
-The real arming marker is absent. A physical result remains UNKNOWN until a
-fresh independent review and a separate operator decision.
+The real arming marker is absent. The attempted capture was INCOMPLETE, so the
+installed CAN/MCU topology remains UNKNOWN. A revised payload requires a fresh
+independent review and separate operator decision.
