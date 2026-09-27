@@ -50,10 +50,13 @@ maintained in `docs/platform/w176-patchability.md`.
   executed once and returned zero; RO/RW window verification passed and the
   one-shot lock remained. Original FAT files were not inspected by the session
   recording this operator-supplied evidence.
-- CONFIRMED host-only: the Stage-4A candidate is bounded to interface/sysfs and
-  device metadata, process FD symlink correlation, and two descriptor-verified
-  library copies. A blocking FIFO fixture completes, demonstrating that the
-  candidate enumeration does not open it. No physical Stage-4A run occurred.
+- CONFIRMED host-only: the original frozen Stage-4A candidate received an
+  independent NO-GO; all ten requested findings were then reproduced in
+  disposable fixtures. The remediated candidate uses a finite device/PID/FD
+  policy, pre-open regular-file checks inside the read-only application mount,
+  bracketed owner metadata, and exact canonical checksum coverage. FIFO open
+  sentinels remain untouched. It awaits fresh independent review; no physical
+  Stage-4A run occurred.
 - CONFIRMED host-only: the Stage-4B 5,556-byte proof daemon has SHA-256
   `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`.
   Two clean pinned-toolchain builds match and the complete static ELF/ABI/
