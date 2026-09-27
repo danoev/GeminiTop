@@ -37,8 +37,9 @@ class Fixture:
             self.target / "application/lib",
             self.proc / "process",
             self.sys / "block/sda",
-            self.sys / "class/net/can0",
-            self.sys / "class/net/eth0",
+            self.sys / "devices/virtual/net/can0",
+            self.sys / "devices/virtual/net/eth0",
+            self.sys / "class/net",
             self.sys / "dev/char",
             self.dev,
         ):
@@ -67,10 +68,11 @@ class Fixture:
             "stage4_topology.sh": {
                 "PATH=/usr/sbin:/usr/bin:/sbin:/bin": f"PATH={shlex.quote(str(self.bin))}",
                 "TARGET_ROOT=/": f"TARGET_ROOT={shlex.quote(str(self.target))}",
-                "TARGET_MOUNTS_FILE=/proc/mounts": f"TARGET_MOUNTS_FILE={shlex.quote(str(self.proc / 'mounts'))}",
+                "TARGET_MOUNTS_FILE=/proc/self/mounts": f"TARGET_MOUNTS_FILE={shlex.quote(str(self.proc / 'self/mounts'))}",
                 "PROCESS_ROOT=/proc": f"PROCESS_ROOT={shlex.quote(str(self.proc / 'process'))}",
                 "FD_ROOT=/proc/self/fd": "FD_ROOT=/dev/fd",
                 "SYS_NET_ROOT=/sys/class/net": f"SYS_NET_ROOT={shlex.quote(str(self.sys / 'class/net'))}",
+                "SYS_DEVICES_ROOT=/sys/devices": f"SYS_DEVICES_ROOT={shlex.quote(str(self.sys / 'devices'))}",
                 "SYS_DEV_CHAR_ROOT=/sys/dev/char": f"SYS_DEV_CHAR_ROOT={shlex.quote(str(self.sys / 'dev/char'))}",
                 "DEV_ROOT=/dev": f"DEV_ROOT={shlex.quote(str(self.dev))}",
             },
@@ -84,6 +86,7 @@ class Fixture:
             path = self.usb / name
             path.write_text(text, encoding="utf-8")
             path.chmod(0o755)
+        shutil.copy2(PAYLOAD / "library_mount_guard.sh", self.usb / "library_mount_guard.sh")
 
     def _commands(self) -> None:
         for name in (
@@ -141,7 +144,8 @@ class Fixture:
             " can0: 0 0 0 0\n eth0: 0 0 0 0\n"
         )
         for name, net_type in (("can0", "280\n"), ("eth0", "1\n")):
-            interface = self.sys / "class/net" / name
+            interface = self.sys / "devices/virtual/net" / name
+            (self.sys / "class/net" / name).symlink_to(f"../../devices/virtual/net/{name}")
             (interface / "type").write_text(net_type)
             (interface / "operstate").write_text("down\n")
             (interface / "mtu").write_text("16\n" if name == "can0" else "1500\n")
@@ -173,6 +177,10 @@ class Fixture:
         (root / "fd" / str(fd)).symlink_to(target)
 
     def set_mount(self, mount: Path, application_fs: str = "squashfs", application_options: str = "ro") -> None:
+        (self.proc / "self").mkdir(exist_ok=True)
+        if not (self.proc / "mounts").is_symlink():
+            (self.proc / "mounts").unlink(missing_ok=True)
+            (self.proc / "mounts").symlink_to("self/mounts")
         (self.proc / "mounts").write_text(
             f"/dev/sda1 {mount.resolve()} vfat rw,dirsync 0 0\n"
             f"rom@spapp. {(self.target / 'application').resolve()} {application_fs} {application_options} 0 0\n"
@@ -585,7 +593,7 @@ class Stage4ATests(unittest.TestCase):
         self.assertNotRegex(text, r'(?:<|dd if=)"?\$ACTUAL')
         snapshot = text[text.index("snapshot_library()") :]
         self.assertLess(snapshot.index("SOURCE_TYPE=$(stat"), snapshot.index("exec 3<"))
-        self.assertLess(snapshot.index("application_boundary_changed"), snapshot.index("exec 3<"))
+        self.assertLess(snapshot.index("effective_mount_invalid"), snapshot.index("exec 3<"))
 
 
 if __name__ == "__main__":

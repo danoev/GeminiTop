@@ -57,6 +57,13 @@ maintained in `docs/platform/w176-patchability.md`.
   bracketed owner metadata, and exact canonical checksum coverage. FIFO open
   sentinels remain untouched. It awaits fresh independent review; no physical
   Stage-4A run occurred.
+- CONFIRMED host-only: the second frozen Stage-4A candidate
+  `11376fc13f61cf0f05a3bfd45ab287e5f42982d0` also received NO-GO.
+  All 13 requested reproductions succeeded in disposable fixtures. Round 2
+  adds fail-closed late finalisation, exact effective library-mount membership,
+  normal proc/sysfs topology handling, independent aggregate/count validation,
+  and accurately labelled final output acceptance. This does not authorise a
+  physical test or change Stage-4B.
 - CONFIRMED host-only: the Stage-4B 5,556-byte proof daemon has SHA-256
   `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`.
   Two clean pinned-toolchain builds match and the complete static ELF/ABI/

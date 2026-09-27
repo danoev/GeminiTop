@@ -308,21 +308,29 @@ def _parse_owners(text: str, owner_kinds: dict[int, set[str]]) -> set[str]:
     owned_paths: set[str] = set()
     records: set[tuple[int, int, int, str]] = set()
     owner_pids: set[int] = set()
+    starts: dict[int, int] = {}
+    descriptors: dict[tuple[int, int], tuple[int, str]] = {}
     for number, line in enumerate(text.splitlines(), 1):
         fields = line.split("|")
         if len(fields) != 4:
             raise InvalidCapture(f"malformed owner line {number}")
         pid_text, start_text, fd_text, target = fields
-        if not pid_text.isdigit() or not start_text.isdigit() or not fd_text.isdigit() or target not in DEVICE_PATHS:
+        if not pid_text.isdigit() or not start_text.isdigit() or len(start_text)>20 or not fd_text.isdigit() or target not in DEVICE_PATHS:
             raise InvalidCapture(f"invalid owner record at line {number}")
         pid, start, fd = int(pid_text), int(start_text), int(fd_text)
         record = (pid, start, fd, target)
         if not 1 <= pid <= 4_096 or not 0 <= fd <= 127 or record in records:
             raise InvalidCapture(f"duplicate/out-of-bound owner record at line {number}")
         records.add(record)
+        if pid in starts and starts[pid] != start:
+            raise InvalidCapture("conflicting PID start times")
+        if (pid, fd) in descriptors:
+            raise InvalidCapture("conflicting PID/FD identity")
+        starts[pid] = start
+        descriptors[pid, fd] = (start, target)
         owner_pids.add(pid)
         owned_paths.add(target)
-    if owner_pids != set(owner_kinds):
+    if len(owner_pids) > 16 or owner_pids != set(owner_kinds):
         raise InvalidCapture("owner records and dynamic inventory groups disagree")
     return owned_paths
 
@@ -365,7 +373,8 @@ def analyze(root: Path) -> dict[str, object]:
         "fd.number.max", "fd_links.total.max", "owners.max", "maps.per_process.bytes.max",
         "maps.total.bytes.max", "interfaces.max", "devices.max", "symlink.bytes.max",
         "libappframework.bytes.max", "libappmcucommunication.bytes.max",
-        "libraries.total.bytes.max", "output.kib.max", "application.boundary",
+        "libraries.total.bytes.max", "output.final_capture.kib.max", "output.write_ceiling",
+        "all_writers.individually_bounded", "application.boundary",
         "process_pid_above_scan_max", "fd_number_above_max",
     }
     capabilities = _parse_exact_kv(
@@ -374,14 +383,15 @@ def analyze(root: Path) -> dict[str, object]:
         "capabilities",
     )
     fixed_capabilities = {
-        "schema": "2", "device_streams.opened": "0", "can_frames.received": "0",
+        "schema": "3", "device_streams.opened": "0", "can_frames.received": "0",
         "can_frames.transmitted": "0", "mcu_commands.sent": "0", "logging.capture": "DEFERRED",
         "pid.scan.max": "4096", "processes.present.max": "256", "fd.number.max": "127",
         "fd_links.total.max": "4096", "owners.max": "16", "maps.per_process.bytes.max": "65536",
         "maps.total.bytes.max": "524288", "interfaces.max": "32", "devices.max": "18",
         "symlink.bytes.max": "4096", "libappframework.bytes.max": "393216",
         "libappmcucommunication.bytes.max": "327680", "libraries.total.bytes.max": "720896",
-        "output.kib.max": "2048", "application.boundary": "squashfs,ro",
+        "output.final_capture.kib.max": "2048", "output.write_ceiling": "NOT_CLAIMED",
+        "all_writers.individually_bounded": "1", "application.boundary": "effective-mount-exact-squashfs,ro",
         "process_pid_above_scan_max": "NOT_INSPECTED", "fd_number_above_max": "NOT_INSPECTED",
     }
     if capabilities != fixed_capabilities:
@@ -400,8 +410,30 @@ def analyze(root: Path) -> dict[str, object]:
     interfaces = _parse_interfaces(_read_text(root, "network/interfaces.txt", FIXED_LIMITS["network/interfaces.txt"]))
     devices = _parse_devices(_read_text(root, "devices/device-nodes.txt", FIXED_LIMITS["devices/device-nodes.txt"]))
     owned_paths = _parse_owners(_read_text(root, "processes/owners.txt", FIXED_LIMITS["processes/owners.txt"]), owner_kinds)
-    if int(summary["interfaces"]) > 32 or int(summary["device_candidates"]) != len(devices) or int(summary["matched_owners"]) != len(owner_kinds):
+    counts = {key: int(value) for key, value in summary.items() if key not in {"schema", "scope"}}
+    ceilings = {"interfaces": 32, "device_candidates": 18, "processes_inspected": 256,
+                "fd_links_inspected": 4096, "matched_owners": 16, "library_bytes": 720896}
+    if any(counts[key] > ceiling for key, ceiling in ceilings.items()):
+        raise InvalidCapture("summary exceeds reviewed bounds")
+    library_bytes = sum(_safe_regular(root, name, limit).stat().st_size for name, limit in LIBRARY_LIMITS.items())
+    maps_bytes = sum(_safe_regular(root, f"processes/{pid}-maps.txt", 65536).stat().st_size for pid in owner_kinds)
+    if maps_bytes > 524288:
+        raise InvalidCapture("aggregate maps exceeds reviewed bound")
+    optional_lines = _read_text(root, "OPTIONAL.txt", 65536).splitlines()
+    if any(not re.fullmatch(rf"optional\.{index}=.{{1,256}}", line) for index, line in enumerate(optional_lines, 1)):
+        raise InvalidCapture("invalid OPTIONAL records")
+    if int(status["optional_findings"]) != len(optional_lines):
+        raise InvalidCapture("OPTIONAL count conflicts with status")
+    if counts["interfaces"] != len(interfaces) or counts["device_candidates"] != len(devices) or counts["matched_owners"] != len(owner_kinds) or counts["library_bytes"] != library_bytes:
         raise InvalidCapture("summary counts conflict with evidence")
+    owner_records = len(_read_text(root, "processes/owners.txt", 131072).splitlines())
+    if counts["processes_inspected"] < len(owner_kinds) or counts["fd_links_inspected"] < owner_records:
+        raise InvalidCapture("scan counts smaller than retained ownership evidence")
+    # A copied capture need not preserve FAT allocation units. Logical byte
+    # count is an independent lower-bound acceptance check, not du equivalence.
+    if sum(_safe_regular(root, name, FIXED_LIMITS[name] if name in FIXED_LIMITS else _owner_limit(name)).stat().st_size
+           for name in expected_checksums | {"checksums.sha256"}) > 2048 * 1024:
+        raise InvalidCapture("logical final capture exceeds 2048 KiB")
 
     raw_interfaces = sorted(name for name, attributes in interfaces.items() if attributes.get("type") == "280")
     library_hits: dict[str, list[str]] = {}

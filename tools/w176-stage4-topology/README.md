@@ -15,6 +15,7 @@ payload/
 ├── ARM_STAGE4_CAN_MCU_TOPOLOGY.example  # rename only after independent GO
 ├── gemn_auto.sh                         # stock USB entry point
 ├── mount_guard.sh                       # exact removable FAT validation
+├── library_mount_guard.sh               # exact effective SquashFS membership
 └── stage4_topology.sh                   # bounded metadata/copy collector
 ```
 
@@ -38,8 +39,10 @@ The candidate captures:
 - bounded `comm`, `cmdline`, `exe`, and `maps` data only for matched owners;
 - before/after PID start-time, FD target, and safe FD-stat bracketing around
   owner metadata; a changed bracket is discarded as race/unusable;
-- pre-open regular/non-symlink checks and confirmation that `/application` is
-  the installed read-only SquashFS boundary, followed by single-open,
+- pre-open regular/non-symlink checks and confirmation that each exact canonical
+  library path is served by the application mount itself (no covering nested
+  mount), using bounded `/proc/self/mounts` parsing and matching device identity,
+  followed by single-open,
   descriptor-verified copies of the installed
   `libappframework.so.1.0.0` and `libappmcucommunication.so.1.0.0` for later
   off-target static analysis.
@@ -48,7 +51,12 @@ It does not run `candump`, receive or transmit frames, open device streams,
 issue MCU commands or ioctls, attach to processes, change interfaces or
 logging, or execute/emulate copied ARM libraries.
 
-The hard limits are recorded in `CAPABILITIES.txt`. Output selection uses only
+Individual limits are recorded in schema-3 `CAPABILITIES.txt`. The 2048-KiB
+property is **final acceptance**, not a write-admission ceiling:
+`output.final_capture.kib.max=2048`, `output.write_ceiling=NOT_CLAIMED`,
+`all_writers.individually_bounded=1`. See the writer audit in
+`docs/platform/w176-stage4a-remediation-round2.md`.
+Output selection uses only
 an atomic fresh-directory creation; all 100 names being occupied fails closed.
 A valid result requires a regular non-symlink `COMPLETE` created last,
 `STATUS.txt` with `status=COMPLETE` and `mandatory_failures=0`, empty
@@ -86,7 +94,7 @@ Copied target libraries are treated as data only.
 ## Host tests
 
 ```sh
-python3 tools/w176-stage4-topology/test_stage4_topology.py
+python3 -m unittest discover -s tools/w176-stage4-topology -v
 ```
 
 The tests use disposable fixtures and host-native stand-ins. They cover the
@@ -94,3 +102,9 @@ independently reproduced NO-GO findings, special-source open sentinels,
 checksum-command failures, canonical manifest coverage, symlink containment,
 owner races, finite enumeration, malformed schemas, and false completion.
 They never run a RoadTop ARM binary or copied RoadTop library.
+
+`reproduce_round2.py` loads only frozen rejected code from Git and runs all 13
+second-review reproductions against temporary fixtures. Never point it at a
+target. Native Linux validation uses `Test.Dockerfile` (pinned Debian base and
+explicit Python/SquashFS package versions), a read-only repository bind, and a
+disposable privileged container for `test_linux_mounts.sh` plus the full suite.

@@ -1,7 +1,10 @@
 # W176 Stage-4A CAN / MCU topology candidate
 
-Status: NO-GO findings remediated and host-tested; awaiting a fresh independent
-review. No physical run or physical GO.
+Status: second independent NO-GO remediated and host-tested; awaiting fresh
+independent review. See
+`w176-stage4a-remediation-round2.md` for the frozen-candidate reproduction,
+transaction/mount changes, writer audit, and regression results. No physical
+run or physical GO.
 
 ## Exact scope
 
@@ -46,9 +49,12 @@ All ten requested findings were reproduced against frozen candidate
 
 The remediated library path rejects symlink, FIFO, socket, block/character
 device, and directory types using metadata before any source descriptor open.
-It confirms the canonical source parent is within the unique read-only
-SquashFS application mount, repeats those checks in the copy child, and only
-then opens the regular file. Under the stated normal/non-hostile stock-system
+It computes the deepest path-component mount ancestor of each exact canonical
+library path from bounded `/proc/self/mounts`, requires that mount to equal the
+established application SquashFS (`ro`, never `rw`), rejects covering nested
+mounts, and compares source/application `st_dev`. It repeats the effective
+mount check inside the copy child and opens the canonical path only afterwards.
+Under the stated normal/non-hostile stock-system
 threat model, the read-only mount prevents pathname replacement between
 preflight and open; descriptor/path identity and mutation checks remain after
 open.
@@ -70,7 +76,10 @@ and 16 matched owners, and bounds maps to 64 KiB per owner and 512 KiB total.
 It permits 32 interfaces from a 64-KiB `/proc/net/dev` snapshot, exactly 18
 device path candidates, 4,096-byte symlink results, 384 KiB for
 `libappframework`, 320 KiB for `libappmcucommunication`, 704 KiB of library
-bytes total, and 2 MiB of USB output. PIDs above 4096 and FD numbers above 127
+bytes total, and a 2-MiB **final capture acceptance** measurement, not an
+aggregate write-admission ceiling. Every writer is individually bounded; the
+complete audit and theoretical pre-acceptance byte bound are in the round-2
+record. PIDs above 4096 and FD numbers above 127
 are explicitly `NOT_INSPECTED`, not evidence of absence.
 
 The installed library sizes confirmed by Stage 2 (287,536 and 213,496 bytes)
@@ -84,8 +93,8 @@ all checksum failure forms, incomplete manifests, output exhaustion, leaf and
 parent symlinks, conservative classification, PID reuse/disappearance, FD
 replacement/disappearance, metadata failure, stable owners, fixed enumeration,
 numeric resource bounds, malformed schemas, and false-completion paths. The
-host could not create a real character-device node without privilege; source
-logic nevertheless accepts only an exact metadata type of `regular file`.
+macOS sandbox cannot create a character node or bind a Unix socket; both
+fixtures run in the disposable privileged native Linux test environment.
 
 ## Evidence and handoff policy
 
