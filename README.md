@@ -11,8 +11,9 @@ This repository is not currently a plug-and-play Mercedes GeminiTop release.
 Stages 1 and 2 established the installed W176 platform and ABI. On 2026-09-27,
 the exact independently reviewed Stage-3 ARMHF probe also executed natively
 from removable USB and returned zero. Native USB execution is physically proven
-at that narrow boundary; persistent installation and the full GeminiTop runtime
-remain separate future milestones.
+at that narrow boundary. Separate Stage-4A topology and Stage-4B non-shadowing
+residency candidates are now prepared for independent review, but neither has
+been physically run and persistent installation is not yet confirmed.
 
 The immediate goal is to understand the installed RoadTop hardware and software
 safely, establish its exact characteristics, and develop a Mercedes-Benz
@@ -156,7 +157,10 @@ See:
 tools/w176-probe/
 tools/w176-stage2/
 tools/w176-stage3-arm-probe/
+tools/w176-stage4-topology/
+tools/w176-stage4-residency/
 docs/platform/w176-stage3-physical-evidence.md
+docs/platform/w176-stage4-residency.md
 ```
 
 ---

@@ -61,7 +61,7 @@ Phase 3 — Native ARMHF USB execution
         v             v
 Phase 4A          Phase 4B
 CAN/MCU topology  Residency proof
-  PLANNED           PLANNED
+  IN PROGRESS       IN PROGRESS
         |             |
         +------+------+
                |
@@ -270,7 +270,7 @@ Research goals:
 
 # Phase 4A — CAN / MCU topology discovery
 
-**Status: PLANNED**
+**Status: IN PROGRESS — host-only review candidate prepared**
 
 Goal:
 
@@ -289,6 +289,37 @@ Launcher / application behaviour
 Initial work should remain observational.
 
 Do not transmit CAN or send MCU commands merely to discover the protocol.
+
+The separately armed candidate under `tools/w176-stage4-topology/` collects
+only bounded network/sysfs/device metadata, existing process-FD ownership, and
+two installed libraries for off-target static analysis. It never opens a
+candidate device stream. It has not been physically run and requires an
+independent safety review before any physical decision.
+
+---
+
+# Phase 4B — First resident GeminiTop process
+
+**Status: IN PROGRESS — host-only review candidate prepared**
+
+Goal:
+
+Prove that one narrowly scoped GeminiTop-owned ARMHF executable can be stored
+under a dedicated, non-shadowing NVM directory, executed from that location,
+and continue running while the installer USB is absent.
+
+The candidate under `tools/w176-stage4-residency/` targets only
+`/media/flash/nvm/geminitop/w176`, includes separately armed install,
+post-removal verification, and exact-allowlist uninstall actions, and leaves
+its heartbeat in `/tmp`. Boot persistence, stock-file modification,
+`nvm/bin`/`nvm/lib` shadowing, networking, CAN, and MCU access are excluded.
+
+The proof ELF has passed clean reproducible builds and static ABI/import
+inspection. Disposable Linux tests use a host-native stand-in and do not
+execute the ARM ELF. No Stage-4B target write or physical run has occurred.
+
+Both Stage 4A and 4B retain separate payload/review boundaries. Preparing both
+candidates does not decide their physical order or grant GO.
 
 ---
 

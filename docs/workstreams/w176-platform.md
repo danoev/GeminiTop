@@ -50,6 +50,16 @@ maintained in `docs/platform/w176-patchability.md`.
   executed once and returned zero; RO/RW window verification passed and the
   one-shot lock remained. Original FAT files were not inspected by the session
   recording this operator-supplied evidence.
+- CONFIRMED host-only: the Stage-4A candidate is bounded to interface/sysfs and
+  device metadata, process FD symlink correlation, and two descriptor-verified
+  library copies. A blocking FIFO fixture completes, demonstrating that the
+  candidate enumeration does not open it. No physical Stage-4A run occurred.
+- CONFIRMED host-only: the Stage-4B 5,556-byte proof daemon has SHA-256
+  `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`.
+  Two clean pinned-toolchain builds match and the complete static ELF/ABI/
+  interpreter/NEEDED/version/import/string gate passes. Disposable Linux
+  install/removal/uninstall tests replace it with a host-native stand-in; the
+  ARM binary was not executed or emulated.
 - REFERENCE ONLY: the Benz v2.0.65 archive contains a Gemini container, a
   validated Linux 4.9.217 uImage, and SquashFS images. Separately, the original
   Audi reconnaissance capture showed a Gemini/ARMv7 runtime and stock
@@ -60,7 +70,8 @@ maintained in `docs/platform/w176-patchability.md`.
 - UNKNOWN: commercial board identity, compatibility of arbitrary ARM ELFs, complete
   userspace compatibility beyond the captured boundary, update compatibility,
   framebuffer pixel semantics beyond the captured channel metadata, and
-  unobserved feature flags.
+  unobserved feature flags. Persistent execution from the proposed dedicated
+  NVM directory remains UNKNOWN until separately reviewed physical evidence.
 
 ## B. Audio / MOST
 
@@ -102,4 +113,5 @@ is authorized in this phase.
 Stages 1, 2, and 3 are frozen historical evidence points. Stage-3 native USB
 execution is physically confirmed for the exact reviewed binary; it does not
 approve later payloads. See `docs/platform/w176-stage3-arm-probe.md` and
-`docs/platform/w176-stage3-physical-evidence.md`.
+`docs/platform/w176-stage3-physical-evidence.md`. Stage-4A and Stage-4B are
+separate host-only review candidates; neither has physical approval.
