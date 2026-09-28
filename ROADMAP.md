@@ -270,7 +270,7 @@ Research goals:
 
 # Phase 4A — CAN / MCU topology discovery
 
-**Status: IN PROGRESS — physical attempt failed closed; TGID remediation needed**
+**Status: COMPLETE — physical v5 capture validated; architecture remains CASE D / UNKNOWN**
 
 Goal:
 
@@ -293,13 +293,15 @@ Do not transmit CAN or send MCU commands merely to discover the protocol.
 The separately armed candidate under `tools/w176-stage4-topology/` collects
 only bounded network/sysfs/device metadata, existing process-FD ownership, and
 two installed libraries for off-target static analysis. It never opens a
-candidate device stream. Its reviewed Stage-4A candidate was physically
-attempted but returned `INCOMPLETE` at `owner_limit`; no valid topology result
-exists. See `docs/platform/w176-stage4a-physical-attempts.md`. The subsequent
-TGID-aware v4 candidate received independent NO-GO because an exited leader
-could appear to have an empty FD directory while workers remained live. The
-lifecycle-aware revision needs a fresh independent safety review before any
-further physical decision. See `docs/platform/w176-stage4a-v4-no-go.md`.
+candidate device stream. Earlier attempts and the v4 NO-GO are retained as
+historical safety evidence. The independently reviewed v5 candidate
+`4161bc3b92d61e19751358fb2e210ebfa9c4e8b2` completed physically on
+2026-09-28; its frozen analyser passed with 22 checksums. No Linux type-280
+interface was observed in that snapshot, positive UART owners were observed,
+and process-FD coverage was PARTIAL. The formal result is CASE D — UNKNOWN;
+MCU translation is an INFERENCE. See
+`docs/platform/w176-stage4a-physical-evidence.md`. The next 01 analysis is an
+offline static trace of the validated installed v2.0.61 MCU library.
 
 ---
 
@@ -323,8 +325,8 @@ The proof ELF has passed clean reproducible builds and static ABI/import
 inspection. Disposable Linux tests use a host-native stand-in and do not
 execute the ARM ELF. No Stage-4B target write or physical run has occurred.
 
-Both Stage 4A and 4B retain separate payload/review boundaries. Preparing both
-candidates does not decide their physical order or grant GO.
+Stage 4A and 4B retain separate payload/review boundaries. Stage-4A physical
+success does not grant Stage-4B GO.
 
 ---
 
@@ -457,12 +459,13 @@ Keep:
 
 The next meaningful milestone is:
 
-> **Prepare Stage-4A topology and Stage-4B residency candidates as separate,
-> independently reviewed payloads; review Stage-4A first.**
+> **Trace the validated installed v2.0.61 MCU library offline, then refresh
+> Stage-4B as a separately reviewed residency candidate.**
 
-Stage-3 does not authorise either physical action. Installed topology,
-persistent-storage safety, and compatibility assumptions remain conservative
-until each next payload passes its own review and physical evidence gate.
+Stage-4A physical capture is complete but does not resolve end-to-end topology
+or authorise Stage-4B physical installation. Persistent-storage safety and
+compatibility assumptions remain conservative until that payload passes its
+own independent review and physical evidence gate.
 
 ---
 

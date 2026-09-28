@@ -1,13 +1,12 @@
 # W176 Stage-4A CAN / MCU topology candidate
 
-Status: the independently approved candidate `17557e6481d68799712779ca605b87e2da866e47`
-was physically attempted and failed closed at `owner_limit`. No valid Stage-4A
-topology result exists. See `w176-stage4a-physical-attempts.md` for the
-operator-returned evidence. Frozen TGID-aware v4 candidate
-`d0f5d7ad651953f607414de956f24bff2d8889f9` then received independent
-NO-GO for an exited-leader/empty-FD coverage flaw; see
-`w176-stage4a-v4-no-go.md`. A lifecycle-aware revision requires a fresh
-independent review; there is no current physical GO.
+Status: the independently approved v5 candidate
+`4161bc3b92d61e19751358fb2e210ebfa9c4e8b2` completed physically on
+2026-09-28. The exact analyser passed with 22 checksums and returned CASE D —
+UNKNOWN, with PARTIAL process-FD coverage. See
+`w176-stage4a-physical-evidence.md`. Earlier failed and NO-GO candidates
+remain historical in `w176-stage4a-physical-attempts.md` and
+`w176-stage4a-v4-no-go.md`.
 
 ## Exact scope
 
@@ -129,6 +128,6 @@ fixtures run in the disposable privileged native Linux test environment.
   safely covered; retained owner paths are positive observations only. Even
   COMPLETE is limited to IDs 1..4096 and FDs 0..127, not global absence proof.
 
-The real arming marker is absent. The attempted capture was INCOMPLETE, so the
-installed CAN/MCU topology remains UNKNOWN. A revised payload requires a fresh
-independent review and separate operator decision.
+The real arming marker is absent. The v5 capture was COMPLETE and validated;
+end-to-end installed CAN/MCU topology nevertheless remains UNKNOWN. No further
+physical action is authorised by this result.

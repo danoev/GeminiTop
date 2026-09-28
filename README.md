@@ -11,12 +11,13 @@ This repository is not currently a plug-and-play Mercedes GeminiTop release.
 Stages 1 and 2 established the installed W176 platform and ABI. On 2026-09-27,
 the exact independently reviewed Stage-3 ARMHF probe also executed natively
 from removable USB and returned zero. Native USB execution is physically proven
-at that narrow boundary. A reviewed Stage-4A topology candidate was physically
-attempted but failed closed at its owner limit; it produced no valid topology
-result. A later TGID-aware Stage-4A candidate received independent NO-GO for
-an exited-leader coverage flaw; a lifecycle-aware host-only revision is under
-review preparation. Stage-4B remains a separate host-only non-shadowing residency candidate,
-and persistent installation is not yet confirmed.
+at that narrow boundary. The independently reviewed Stage-4A v5 topology
+capture completed physically on 2026-09-28 and its exact host analyser passed
+22 checksum checks. It classified architecture as CASE D — UNKNOWN, with an MCU
+translation path supported as an inference; process-FD coverage was partial.
+The earlier interrupted, failed, and NO-GO candidates remain historical.
+Offline analysis of the installed MCU library and a separately reviewed
+Stage-4B residency proof are next. Persistent installation is not confirmed.
 
 The immediate goal is to understand the installed RoadTop hardware and software
 safely, establish its exact characteristics, and develop a Mercedes-Benz
@@ -452,9 +453,9 @@ Stage 4A — CAN/MCU topology   Stage 4B — residency proof
               future GeminiTop runtime
 ```
 
-The next physical candidates remain metadata-only topology discovery and a
-separate minimal persistent-residency proof. Neither is authorised merely by
-the Stage-3 result.
+Stage-4A metadata capture is physically complete. The next physical candidate
+is a separate minimal persistent-residency proof, subject to its own independent
+safety review; Stage-4A success does not authorise it.
 
 ---
 

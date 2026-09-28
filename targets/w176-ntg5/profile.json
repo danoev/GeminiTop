@@ -8,7 +8,8 @@
     "owner-reported on-screen version strings",
     "successful physical Stage-1 capture produced by commit 5f85cafd0416b0511cc4570b6e280613112d6243; sanitised derived facts only",
     "successful physical Stage-2 capture produced by commit 059db6e6aabdd0599967e413bd28c429ab0f0458; sanitised derived facts only",
-    "operator-returned successful physical Stage-3 transaction from reviewed commit ee6ea0f7d0ef028c406c324e9f43f078d5f8de3f on 2026-09-27; original FAT media/files not inspected in the recording session"
+    "operator-returned successful physical Stage-3 transaction from reviewed commit ee6ea0f7d0ef028c406c324e9f43f078d5f8de3f on 2026-09-27; original FAT media/files not inspected in the recording session",
+    "operator-returned physical Stage-4A v5 capture from reviewed commit 4161bc3b92d61e19751358fb2e210ebfa9c4e8b2 on 2026-09-28; mounted returned capture re-analysed read-only, 22 checksums verified"
   ],
   "facts": {
     "vehicle_family": {"state": "CONFIRMED", "value": "Mercedes W176 / NTG5*1"},
@@ -34,6 +35,9 @@
     "launcher": {"state": "CONFIRMED", "value": "/application/bin/Launcher, 92416 bytes"},
     "installed_userspace_abi": {"state": "CONFIRMED", "value": "ELF32 little-endian ARM EABI5 hard-float; interpreter /lib/ld-linux-armhf.so.3 -> ld-2.30.so; installed Launcher version needs GLIBC_2.4 and GCC_3.5; the reviewed GLIBC_2.4-only project probe executed natively and returned zero"},
     "custom_arm_elf_loadability": {"state": "CONFIRMED", "value": "Reviewed 5556-byte ARMHF ELF from commit ee6ea0f7d0ef028c406c324e9f43f078d5f8de3f, SHA-256 662a2457a818624c63428c9bab0a62ff3c90f9941c3b92761c4f646ee0477789, executed natively from removable USB and returned exit status 0 on 2026-09-27; operator-supplied physical result"},
+    "stage4a_topology_capture": {"state": "CONFIRMED", "value": "2026-09-28 physical COMPLETE for reviewed v5 candidate; analyser PASS with 22 verified checksums; CASE D UNKNOWN; process-FD coverage PARTIAL"},
+    "linux_can_type_280_snapshot": {"state": "CONFIRMED", "value": "NOT_OBSERVED in validated Stage-4A snapshot; not a universal absence or support claim"},
+    "mcu_translation_path": {"state": "INFERENCE", "value": "positive UART ownership and installed MCU-library vocabulary support translation before Linux; end-to-end semantics unconfirmed"},
     "firmware_authentication": {"state": "UNKNOWN", "value": null},
     "verified_recovery_path": {"state": "UNKNOWN", "value": null},
     "application_names": {"state": "CONFIRMED", "value": ["Launcher", "aa_manager_service", "apple_carplay_server", "networkmanager"]},

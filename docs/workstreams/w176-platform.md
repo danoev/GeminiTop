@@ -85,6 +85,16 @@ maintained in `docs/platform/w176-patchability.md`.
   retains leader-only enumeration, stages owner evidence until post-scan
   validation, and marks incomplete process-FD coverage PARTIAL. This is
   host-only and requires a new independent review; no further vehicle action.
+- CONFIRMED physical Stage-4A v5 result: independently approved candidate
+  `4161bc3b92d61e19751358fb2e210ebfa9c4e8b2` completed on 2026-09-28.
+  The mounted returned capture was re-analysed read-only: validation PASS,
+  22 verified checksums, CASE D — UNKNOWN. No Linux type-280 interface was
+  observed; Launcher and gocsdk had positive UART FD ownership. Process-FD
+  coverage was PARTIAL, so negative ownership claims are unavailable. MCU
+  translation remains INFERENCE. See
+  `docs/platform/w176-stage4a-physical-evidence.md`. The 02 workstream has
+  already received the initial topology handoff and requested an offline trace
+  of the installed v2.0.61 MCU library.
 - CONFIRMED host-only: the Stage-4B 5,556-byte proof daemon has SHA-256
   `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`.
   Two clean pinned-toolchain builds match and the complete static ELF/ABI/
@@ -144,6 +154,6 @@ is authorized in this phase.
 Stages 1, 2, and 3 are frozen historical evidence points. Stage-3 native USB
 execution is physically confirmed for the exact reviewed binary; it does not
 approve later payloads. See `docs/platform/w176-stage3-arm-probe.md` and
-`docs/platform/w176-stage3-physical-evidence.md`. The reviewed Stage-4A
-attempt failed closed; its replacement needs its own review. Stage-4B remains
-a separate host-only candidate without physical approval.
+`docs/platform/w176-stage3-physical-evidence.md`. The reviewed Stage-4A v5
+capture completed; architecture classification remains CASE D — UNKNOWN.
+Stage-4B remains a separate host-only candidate without physical approval.
