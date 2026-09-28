@@ -18,20 +18,7 @@ TARGET_STATUS=$?
 validate_hash "$DEST_BINARY" "$EXPECTED_BINARY_SHA256" "$EXPECTED_BINARY_SIZE" || { record_failure "destination_hash_mismatch"; finish_incomplete; }
 validate_manifest "$DEST_MANIFEST" || { record_failure "manifest_invalid"; finish_incomplete; }
 
-INSTALL_PROCESS="$USB_ROOT/stage4b-install/PROCESS.txt"
-is_regular_nonsymlink "$INSTALL_PROCESS" || { record_failure "install_process_evidence_missing"; finish_incomplete; }
-[ "$(stat -L -c '%s' "$INSTALL_PROCESS" 2>/dev/null)" -le 1024 ] || { record_failure "install_process_evidence_oversized"; finish_incomplete; }
-ORIGINAL_VALUES=$(awk -F= '
-    $1=="pid" && $2 ~ /^[0-9]+$/ {pid=$2;pc++}
-    $1=="start_time" && $2 ~ /^[0-9]+$/ {start=$2;sc++}
-    $1=="exe" {exe=$2;ec++}
-    $1=="heartbeat_sequence" && $2 ~ /^[0-9]+$/ {sequence=$2;hc++}
-    END {if(pc==1&&sc==1&&ec==1&&hc==1) print pid "|" start "|" exe "|" sequence; else exit 1}
-' "$INSTALL_PROCESS" 2>/dev/null) || { record_failure "install_process_evidence_invalid"; finish_incomplete; }
-OLD_IFS=$IFS; IFS='|'; set -- $ORIGINAL_VALUES; IFS=$OLD_IFS
-[ "$#" -eq 4 ] || { record_failure "install_process_evidence_format"; finish_incomplete; }
-ORIGINAL_PID=$1; ORIGINAL_START=$2; ORIGINAL_EXE=$3; ORIGINAL_SEQUENCE=$4
-[ "$ORIGINAL_EXE" = "$DEST_BINARY" ] || { record_failure "install_exe_mismatch"; finish_incomplete; }
+validate_install_record || { record_failure "install_transaction_invalid"; finish_incomplete; }
 
 read_process_identity "$ORIGINAL_PID" || { record_failure "resident_process_missing"; finish_incomplete; }
 [ "$PROCESS_START" = "$ORIGINAL_START" ] && [ "$PROCESS_EXE_ONE" = "$DEST_BINARY" ] || { record_failure "resident_process_identity_changed"; finish_incomplete; }

@@ -18,58 +18,16 @@ PARENT_CREATED=0
 STAGE_CREATED=0
 INSTALL_CREATED=0
 
-safe_stop_process() {
-    [ -n "$PROCESS_PID" ] || return 0
-    if read_process_identity "$PROCESS_PID" &&
-        [ "$PROCESS_START" = "$PROCESS_START_TIME" ] &&
-        [ "$PROCESS_EXE_ONE" = "$DEST_BINARY" ]
-    then
-        kill -TERM "$PROCESS_PID" 2>/dev/null || return 1
-        STOP_POLLS=0
-        while [ "$STOP_POLLS" -lt 5 ]; do
-            sleep 1 || return 1
-            if ! read_process_identity "$PROCESS_PID"; then return 0; fi
-            [ "$PROCESS_START" = "$PROCESS_START_TIME" ] || return 0
-            STOP_POLLS=$((STOP_POLLS + 1))
-        done
-        return 1
-    fi
-    return 0
-}
-
-safe_remove_created_tree() {
-    CLEANUP_RESULT=0
-    if [ "$INSTALL_CREATED" -eq 1 ]; then
-        validate_hash "$DEST_BINARY" "$EXPECTED_BINARY_SHA256" "$EXPECTED_BINARY_SIZE" || CLEANUP_RESULT=1
-        validate_manifest "$DEST_MANIFEST" || CLEANUP_RESULT=1
-        [ "$CLEANUP_RESULT" -ne 0 ] || rm -f "$DEST_MANIFEST" "$DEST_BINARY" || CLEANUP_RESULT=1
-        [ "$CLEANUP_RESULT" -ne 0 ] || rmdir "$INSTALL_DIR" || CLEANUP_RESULT=1
-    elif [ "$STAGE_CREATED" -eq 1 ]; then
-        for OWNED in "$STAGE_DIR/geminitop-proofd.tmp" "$STAGE_DIR/geminitop-proofd" "$STAGE_DIR/manifest.txt.tmp" "$STAGE_DIR/manifest.txt"; do
-            [ ! -e "$OWNED" ] && [ ! -L "$OWNED" ] && continue
-            is_regular_nonsymlink "$OWNED" || { CLEANUP_RESULT=1; continue; }
-            rm -f "$OWNED" || CLEANUP_RESULT=1
-        done
-        [ "$CLEANUP_RESULT" -ne 0 ] || rmdir "$STAGE_DIR" || CLEANUP_RESULT=1
-    fi
-    if [ "$PARENT_CREATED" -eq 1 ]; then rmdir "$INSTALL_PARENT" 2>/dev/null || CLEANUP_RESULT=1; fi
-    return "$CLEANUP_RESULT"
-}
-
 abort_install() {
+    trap - HUP INT TERM
     record_failure "$1"
-    safe_stop_process || record_failure "rollback_process_stop_failed"
-    if [ -e "$HEARTBEAT_TEMP" ] || [ -L "$HEARTBEAT_TEMP" ]; then
-        record_failure "rollback_heartbeat_temp_remains"
+    if [ "$PARENT_CREATED" -eq 1 ] || [ "$STAGE_CREATED" -eq 1 ] ||
+        [ "$INSTALL_CREATED" -eq 1 ] || [ -n "$PROCESS_PID" ]; then
+        record_failure "manual_review_required:persistent_state_or_process_uncertain"
     fi
-    if [ -e "$HEARTBEAT" ] || [ -L "$HEARTBEAT" ]; then
-        if [ -n "$PROCESS_PID" ] && validate_owned_heartbeat "$PROCESS_PID"; then
-            rm -f "$HEARTBEAT" || record_failure "rollback_heartbeat_remove_failed"
-        else
-            record_failure "rollback_heartbeat_ownership_unverified"
-        fi
-    fi
-    safe_remove_created_tree || record_failure "rollback_tree_cleanup_failed"
+    # Never auto-delete NVM after the first write. An uncertain launched
+    # process may still execute the destination; only a separate reviewed
+    # recovery action may change persistent state.
     finish_incomplete
 }
 
@@ -96,10 +54,13 @@ printf '%s\n' \
 
 mkdir "$INSTALL_PARENT" || abort_install "install_parent_create"
 PARENT_CREATED=1
+validate_nvm_path "$INSTALL_PARENT" || abort_install "install_parent_mount_changed"
 mkdir "$STAGE_DIR" || abort_install "stage_directory_create"
 STAGE_CREATED=1
+validate_nvm_path "$STAGE_DIR" || abort_install "stage_mount_changed"
 
 COPY_TEMP="$STAGE_DIR/geminitop-proofd.tmp"
+validate_nvm_path "$COPY_TEMP" || abort_install "copy_destination_mount_changed"
 COPY_RESULT="$OUT_DISPLAY/.copy.result"
 rm -f "$COPY_RESULT" 2>/dev/null || abort_install "copy_result_prepare"
 /bin/sh -c '
@@ -124,6 +85,7 @@ is_regular_nonsymlink "$COPY_RESULT" && [ "$(dd if="$COPY_RESULT" bs=32 count=1 
 rm -f "$COPY_RESULT" || abort_install "copy_result_cleanup"
 validate_hash "$COPY_TEMP" "$EXPECTED_BINARY_SHA256" "$EXPECTED_BINARY_SIZE" || abort_install "destination_temp_hash_mismatch"
 chmod 755 "$COPY_TEMP" || abort_install "destination_permission_failed"
+validate_nvm_path "$STAGE_DIR/geminitop-proofd" || abort_install "staged_binary_mount_changed"
 mv "$COPY_TEMP" "$STAGE_DIR/geminitop-proofd" || abort_install "destination_commit_failed"
 
 printf '%s\n' \
@@ -136,12 +98,16 @@ printf '%s\n' \
     "binary_size=$EXPECTED_BINARY_SIZE" \
     "installed_path=$DEST_BINARY" > "$STAGE_DIR/manifest.txt.tmp" || abort_install "manifest_write_failed"
 chmod 444 "$STAGE_DIR/manifest.txt.tmp" || abort_install "manifest_permission_failed"
+validate_nvm_path "$STAGE_DIR/manifest.txt" || abort_install "staged_manifest_mount_changed"
 mv "$STAGE_DIR/manifest.txt.tmp" "$STAGE_DIR/manifest.txt" || abort_install "manifest_commit_failed"
+validate_nvm_path "$INSTALL_DIR" || abort_install "final_directory_mount_changed"
 mv "$STAGE_DIR" "$INSTALL_DIR" || abort_install "install_directory_commit_failed"
 STAGE_CREATED=0
 INSTALL_CREATED=1
 validate_hash "$DEST_BINARY" "$EXPECTED_BINARY_SHA256" "$EXPECTED_BINARY_SIZE" || abort_install "destination_hash_mismatch"
 validate_manifest "$DEST_MANIFEST" || abort_install "manifest_invalid"
+validate_nvm_path "$DEST_BINARY" || abort_install "destination_mount_changed"
+validate_nvm_path "$DEST_MANIFEST" || abort_install "manifest_mount_changed"
 
 (cd /tmp && exec "$DEST_BINARY" "$EXPECTED_BINARY_SHA256" </dev/null >/dev/null 2>&1) &
 PROCESS_PID=$!
