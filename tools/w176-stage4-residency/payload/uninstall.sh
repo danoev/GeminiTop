@@ -24,12 +24,14 @@ validate_install_inventory || uninstall_stop "install_inventory_invalid"
 read_process_identity "$ORIGINAL_PID" || uninstall_stop "original_process_uninspectable_or_not_live"
 [ "$PROCESS_START" = "$ORIGINAL_START" ] &&
     [ "$PROCESS_EXE_ONE" = "$DEST_BINARY" ] || uninstall_stop "original_process_identity_mismatch"
+scan_unique_proofd "$ORIGINAL_PID" "$ORIGINAL_START" || uninstall_stop "original_process_not_unique"
 validate_process_detached_from_usb "$ORIGINAL_PID" || uninstall_stop "usb_fd_coverage_unknown"
-validate_heartbeat "$ORIGINAL_PID" || uninstall_stop "heartbeat_not_bound_to_live_run"
+validate_heartbeat "$ORIGINAL_PID" "$ORIGINAL_START" || uninstall_stop "heartbeat_not_bound_to_live_run"
 read_process_identity "$ORIGINAL_PID" || uninstall_stop "pre_term_identity_unknown"
 [ "$PROCESS_START" = "$ORIGINAL_START" ] &&
     [ "$PROCESS_EXE_ONE" = "$DEST_BINARY" ] || uninstall_stop "pre_term_identity_changed"
 validate_install_inventory || uninstall_stop "pre_term_inventory_changed"
+scan_unique_proofd "$ORIGINAL_PID" "$ORIGINAL_START" || uninstall_stop "pre_term_process_not_unique"
 
 # Final identity check immediately before TERM. No KILL fallback.
 read_process_identity "$ORIGINAL_PID" || uninstall_stop "last_pre_term_identity_unknown"
@@ -72,16 +74,19 @@ EOF
     STOP_POLLS=$((STOP_POLLS + 1))
 done
 [ "$STOPPED" -eq 1 ] || uninstall_stop "term_ignored_or_process_still_live"
+scan_no_proofd || uninstall_stop "post_term_process_coverage_unknown"
 
 # No persistent delete until every object and the stopped heartbeat validate.
 validate_install_inventory || uninstall_stop "post_term_inventory_changed"
 [ ! -e "$HEARTBEAT_TEMP" ] && [ ! -L "$HEARTBEAT_TEMP" ] || uninstall_stop "post_term_heartbeat_temp_conflict"
-validate_owned_heartbeat "$ORIGINAL_PID" || uninstall_stop "post_term_heartbeat_ownership_unknown"
+validate_owned_heartbeat "$ORIGINAL_PID" "$ORIGINAL_START" || uninstall_stop "post_term_heartbeat_ownership_unknown"
+scan_no_proofd || uninstall_stop "pre_delete_process_coverage_unknown"
 validate_nvm_path "$DEST_MANIFEST" || uninstall_stop "manifest_mount_changed"
 rm "$DEST_MANIFEST" || uninstall_stop "partial_uninstall_manifest_remove_failed"
 # From this point, any failure is PARTIAL_UNINSTALL / MANUAL_REVIEW_REQUIRED.
 validate_nvm_path "$DEST_BINARY" || uninstall_stop "partial_uninstall_binary_mount_changed"
 validate_hash "$DEST_BINARY" "$EXPECTED_BINARY_SHA256" "$EXPECTED_BINARY_SIZE" || uninstall_stop "partial_uninstall_binary_changed"
+scan_no_proofd || uninstall_stop "partial_uninstall_process_coverage_unknown"
 rm "$DEST_BINARY" || uninstall_stop "partial_uninstall_binary_remove_failed"
 validate_nvm_path "$INSTALL_DIR" || uninstall_stop "partial_uninstall_directory_mount_changed"
 rmdir "$INSTALL_DIR" || uninstall_stop "partial_uninstall_directory_not_empty"

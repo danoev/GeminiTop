@@ -6,7 +6,7 @@ export CDPATH
 
 SCRIPT_DIR=$(cd -P "$(dirname "$0")" && pwd -P)
 BINARY=${1:-"$SCRIPT_DIR/payload/geminitop-proofd"}
-EXPECTED_SHA256=57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6
+EXPECTED_SHA256=684afd86a067a6e175ed6b7d6c2a0281f1d44c67f62d86431589d1d7bd8c41b8
 EXPECTED_SIZE=5556
 IMAGE=geminitop-w176-stage4-toolchain:9.2-2019.12-arm64
 
@@ -47,6 +47,8 @@ printf '%s\n' "$ATTRIBUTES" | grep -F 'Tag_FP_arch: VFPv3' >/dev/null
 printf '%s\n' "$ATTRIBUTES" | grep -F 'Tag_Advanced_SIMD_arch: NEONv1' >/dev/null
 printf '%s\n' "$ATTRIBUTES" | grep -F 'Tag_ABI_VFP_args: VFP registers' >/dev/null
 printf '%s\n' "$PROGRAMS" | grep -F '[Requesting program interpreter: /lib/ld-linux-armhf.so.3]' >/dev/null
+printf '%s\n' "$PROGRAMS" | grep -E 'GNU_STACK[[:space:]].* RW[[:space:]]' >/dev/null
+printf '%s\n' "$PROGRAMS" | grep -E 'GNU_RELRO[[:space:]].* R[[:space:]]' >/dev/null
 
 [ "$(printf '%s\n' "$DYNAMIC" | grep -c '(NEEDED)')" -eq 1 ]
 printf '%s\n' "$DYNAMIC" | grep -F 'Shared library: [libc.so.6]' >/dev/null
@@ -58,7 +60,7 @@ printf '%s\n' "$OBJDUMP_PRIVATE" | grep -F 'NEEDED               libc.so.6' >/de
 if printf '%s\n' "$OBJDUMP_PRIVATE" | grep -E '(RPATH|RUNPATH)' >/dev/null; then exit 1; fi
 
 for IMPORT in \
-    unlink sigaction rename getpid strlen memset sigemptyset nanosleep open \
+    read unlink sigaction rename getpid memset sigemptyset nanosleep open \
     snprintf write abort close __libc_start_main __errno_location
 do
     printf '%s\n' "$SYMBOLS" | grep -F "UND $IMPORT@GLIBC_2.4" >/dev/null
@@ -69,12 +71,13 @@ printf '%s\n' "$SYMBOLS" | grep -F 'UND __gmon_start__' >/dev/null
 
 for REQUIRED_STRING in \
     /tmp/geminitop-proofd.status /tmp/.geminitop-proofd.status.tmp \
-    w176-stage4b-proofd-v1 process=geminitop-proofd heartbeat_sequence
+    /proc/self/stat w176-stage4b-proofd-v2 process=geminitop-proofd start_ticks
 do
     printf '%s\n' "$STRINGS" | grep -F "$REQUIRED_STRING" >/dev/null
 done
-if printf '%s\n' "$STRINGS" | grep -E '(/dev/|/media/|/proc/|/sys/|socket|connect|listen|Launcher|canbox|mcu)' >/dev/null; then
+if printf '%s\n' "$STRINGS" | grep -E '(/dev/|/media/|/sys/|socket|connect|listen|Launcher|canbox|mcu)' >/dev/null; then
     exit 1
 fi
+[ "$(printf '%s\n' "$STRINGS" | grep -c '/proc/')" -eq 1 ]
 
 printf '%s\n' "static ABI verification: PASS"

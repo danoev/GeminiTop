@@ -18,12 +18,15 @@ EXPECTED_MEDIA_LINK=/tmp/sp/media/
 EXPECTED_NVM_CANONICAL=/tmp/sp/media/flash/nvm
 EXPECTED_NVM_SOURCE=/dev/mtdblock12
 NVM_SOURCE_TEST=-b
+SYS_BLOCK_CLASS=/sys/class/block/mtdblock12
+SYS_DEV_BLOCK_ROOT=/sys/dev/block
+SYS_MTD_CLASS=/sys/class/mtd/mtd12
 LAUNCHER_PATH=/application/bin/Launcher
 APPINFO_PATH=/application/appinfo.rc
 EXPECTED_KERNEL_RELEASE=4.9.217
 EXPECTED_LAUNCHER_SHA256=5ff83ac9cf9fb2ccb21c90c9b2edb2952581153ec5d5ab4a299787243e1e0c56
 EXPECTED_LAUNCHER_SIZE=92416
-EXPECTED_BINARY_SHA256=57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6
+EXPECTED_BINARY_SHA256=684afd86a067a6e175ed6b7d6c2a0281f1d44c67f62d86431589d1d7bd8c41b8
 EXPECTED_BINARY_SIZE=5556
 EXPECTED_NVM_BYTES_HEX=00800000
 INSTALL_PARENT=$NVM_ROOT/geminitop
@@ -34,10 +37,54 @@ DEST_MANIFEST=$INSTALL_DIR/manifest.txt
 HEARTBEAT=/tmp/geminitop-proofd.status
 HEARTBEAT_TEMP=/tmp/.geminitop-proofd.status.tmp
 MAX_PROCESSES=256
+MAX_PID=4194304
 MINIMUM_FREE_KIB=128
 export PATH
 
 is_regular_nonsymlink() { [ -f "$1" ] && [ ! -L "$1" ]; }
+
+read_sysfs_value() {
+    SYSFS_FILE=$1
+    is_regular_nonsymlink "$SYSFS_FILE" || return 1
+    SYSFS_VALUE=$(dd if="$SYSFS_FILE" bs=1 count=65 2>/dev/null) || return 1
+    [ "${#SYSFS_VALUE}" -le 64 ] || return 1
+    [ -n "$SYSFS_VALUE" ] || return 1
+    return 0
+}
+
+validate_mtd_binding() {
+    [ ! -L "$EXPECTED_NVM_SOURCE" ] || return 1
+    if [ "$NVM_SOURCE_TEST" = -b ]; then
+        [ -b "$EXPECTED_NVM_SOURCE" ] || return 1
+    else
+        [ -e "$EXPECTED_NVM_SOURCE" ] || return 1
+    fi
+    NODE_HEX=$(stat -c '%t:%T' "$EXPECTED_NVM_SOURCE" 2>/dev/null) || return 1
+    case "$NODE_HEX" in *:*) ;; *) return 1 ;; esac
+    NODE_MAJOR_HEX=${NODE_HEX%%:*}; NODE_MINOR_HEX=${NODE_HEX#*:}
+    case "$NODE_MAJOR_HEX" in ''|*[!0-9a-fA-F]*) return 1 ;; esac
+    case "$NODE_MINOR_HEX" in ''|*[!0-9a-fA-F]*) return 1 ;; esac
+    [ -d "$SYS_BLOCK_CLASS" ] || return 1
+    read_sysfs_value "$SYS_BLOCK_CLASS/dev" || return 1
+    SYS_BLOCK_DEV=$SYSFS_VALUE
+    case "$SYS_BLOCK_DEV" in *:*) ;; *) return 1 ;; esac
+    SYS_MAJOR=${SYS_BLOCK_DEV%%:*}; SYS_MINOR=${SYS_BLOCK_DEV#*:}
+    case "$SYS_MAJOR" in ''|*[!0-9]*) return 1 ;; esac
+    case "$SYS_MINOR" in ''|*[!0-9]*) return 1 ;; esac
+    [ "${#SYS_MAJOR}" -le 10 ] && [ "${#SYS_MINOR}" -le 10 ] || return 1
+    [ "$((0x$NODE_MAJOR_HEX))" -eq "$SYS_MAJOR" ] &&
+        [ "$((0x$NODE_MINOR_HEX))" -eq "$SYS_MINOR" ] || return 1
+    [ -L "$SYS_DEV_BLOCK_ROOT/$SYS_BLOCK_DEV" ] || return 1
+    CLASS_CANONICAL=$(cd -P "$SYS_BLOCK_CLASS" 2>/dev/null && pwd -P) || return 1
+    DEV_CANONICAL=$(cd -P "$SYS_DEV_BLOCK_ROOT/$SYS_BLOCK_DEV" 2>/dev/null && pwd -P) || return 1
+    [ "$CLASS_CANONICAL" = "$DEV_CANONICAL" ] || return 1
+    [ -d "$SYS_MTD_CLASS" ] || return 1
+    read_sysfs_value "$SYS_MTD_CLASS/name" || return 1
+    [ "$SYSFS_VALUE" = nvm ] || return 1
+    read_sysfs_value "$SYS_MTD_CLASS/size" || return 1
+    [ "$SYSFS_VALUE" = 8388608 ] || return 1
+    return 0
+}
 
 validate_hash() {
     HASH_PATH=$1; EXPECTED_HASH=$2; EXPECTED_SIZE=$3
@@ -162,11 +209,7 @@ EOF
     NVM_LINES=$(awk '$1 == "mtd12:" && $4 == "\"nvm\"" { count++; line=$0; size=$2 } END { if (count == 1) print size "|" line; else exit 1 }' "$MTD_FILE" 2>/dev/null) || return 15
     NVM_SIZE_HEX=${NVM_LINES%%|*}
     [ "$NVM_SIZE_HEX" = "$EXPECTED_NVM_BYTES_HEX" ] || return 15
-    if [ "$NVM_SOURCE_TEST" = -b ]; then
-        [ -b "$EXPECTED_NVM_SOURCE" ] || return 15
-    else
-        [ -e "$EXPECTED_NVM_SOURCE" ] || return 15
-    fi
+    validate_mtd_binding || return 15
     validate_nvm_path "$INSTALL_PARENT" || return 15
     validate_nvm_path "$INSTALL_DIR" || return 15
     validate_nvm_path "$STAGE_DIR" || return 15
@@ -200,7 +243,7 @@ EOF
     return 0
 }
 
-read_process_identity() {
+read_process_core() {
     IDENTITY_PID=$1
     case "$IDENTITY_PID" in ''|*[!0-9]*) return 1 ;; esac
     STATUS_TEXT=$(dd if="$PROCESS_ROOT/$IDENTITY_PID/status" bs=1 count=16385 2>/dev/null && printf x) || return 1
@@ -210,7 +253,7 @@ read_process_identity() {
         $1=="Pid:" { if ($2!=pid || $2 !~ /^[0-9]+$/) bad=1; p++; }
         $1=="Tgid:" { if ($2!=pid || $2 !~ /^[0-9]+$/) bad=1; t++; }
         $1=="State:" { state=$2; s++; }
-        END { if (!bad && p==1 && t==1 && s==1 && state ~ /^[RSDTtI]$/) print state; else exit 1 }
+        END { if (!bad && p==1 && t==1 && s==1 && state ~ /^[RSDTtIZXx]$/) print state; else exit 1 }
     ' <<EOF
 $STATUS_TEXT
 EOF
@@ -218,36 +261,126 @@ EOF
     STAT_LINE=$(dd if="$PROCESS_ROOT/$IDENTITY_PID/stat" bs=1 count=8193 2>/dev/null && printf x) || return 1
     STAT_LINE=${STAT_LINE%x}
     [ "${#STAT_LINE}" -le 8192 ] || return 1
+    [ "${STAT_LINE%% (*}" = "$IDENTITY_PID" ] || return 1
     case "$STAT_LINE" in *') '*) STAT_TAIL=${STAT_LINE##*) } ;; *) return 1 ;; esac
     set -- $STAT_TAIL
     [ "$#" -ge 20 ] || return 1
     PROCESS_STATE=$1
     [ "$PROCESS_STATE" = "$STATUS_VALUES" ] || return 1
+    PROCESS_FLAGS=$7
+    case "$PROCESS_FLAGS" in ''|*[!0-9]*) return 1 ;; esac
+    case "$PROCESS_FLAGS" in 0|[1-9]|[1-9][0-9]*) ;; *) return 1 ;; esac
+    [ "${#PROCESS_FLAGS}" -le 12 ] || return 1
     shift 19
     PROCESS_START=$1
     case "$PROCESS_START" in ''|*[!0-9]*) return 1 ;; esac
+    PROCESS_CORE_IDENTITY="$IDENTITY_PID|$PROCESS_START|$PROCESS_FLAGS"
+    return 0
+}
+
+read_process_identity() {
+    IDENTITY_PID=$1
+    read_process_core "$IDENTITY_PID" || return 1
+    case "$PROCESS_STATE" in R|S|D|T|t|I) ;; *) return 1 ;; esac
     PROCESS_EXE_ONE=$(readlink "$PROCESS_ROOT/$IDENTITY_PID/exe" 2>/dev/null) || return 1
     PROCESS_EXE_TWO=$(readlink "$PROCESS_ROOT/$IDENTITY_PID/exe" 2>/dev/null) || return 1
     [ "$PROCESS_EXE_ONE" = "$PROCESS_EXE_TWO" ] || return 1
-    PROCESS_IDENTITY="$IDENTITY_PID|$PROCESS_START|$PROCESS_EXE_ONE"
+    PROCESS_EXE_ID=$(stat -L -c '%d|%i|%F|%s' "$PROCESS_ROOT/$IDENTITY_PID/exe" 2>/dev/null) || return 1
+    PROCESS_IDENTITY="$IDENTITY_PID|$PROCESS_START|$PROCESS_EXE_ONE|$PROCESS_EXE_ID"
+    return 0
+}
+
+scan_process_gone_or_terminal() {
+    GONE_PID=$1; GONE_START=$2
+    [ ! -d "$PROCESS_ROOT/$GONE_PID" ] && return 0
+    read_process_core "$GONE_PID" || return 1
+    [ "$PROCESS_START" = "$GONE_START" ] || return 1
+    case "$PROCESS_STATE" in Z|X|x) return 0 ;; *) return 1 ;; esac
+}
+
+scan_unique_proofd() {
+    EXPECTED_MATCH_PID=$1; EXPECTED_MATCH_START=$2
+    DEST_ID=$(stat -c '%d|%i|%F|%s' "$DEST_BINARY" 2>/dev/null) || return 1
+    case "$DEST_ID" in *'|regular file|'*) ;; *) return 1 ;; esac
+    SCAN_COUNT=0; MATCH_COUNT=0
+    for PROCESS_DIR in "$PROCESS_ROOT"/[0-9]*; do
+        [ -d "$PROCESS_DIR" ] || continue
+        SCAN_COUNT=$((SCAN_COUNT + 1))
+        [ "$SCAN_COUNT" -le "$MAX_PROCESSES" ] || return 1
+        SCAN_PID=${PROCESS_DIR##*/}
+        case "$SCAN_PID" in ''|*[!0-9]*) return 1 ;; esac
+        [ "$SCAN_PID" -le "$MAX_PID" ] || return 1
+        read_process_core "$SCAN_PID" || { [ ! -d "$PROCESS_DIR" ] && continue; return 1; }
+        SCAN_CORE=$PROCESS_CORE_IDENTITY
+        SCAN_START=$PROCESS_START
+        case "$PROCESS_STATE" in Z|X|x) continue ;; esac
+        if [ "$((PROCESS_FLAGS & 2097152))" -ne 0 ]; then
+            read_process_core "$SCAN_PID" || { scan_process_gone_or_terminal "$SCAN_PID" "$SCAN_START" && continue; return 1; }
+            [ "$PROCESS_CORE_IDENTITY" = "$SCAN_CORE" ] || return 1
+            continue
+        fi
+        read_process_identity "$SCAN_PID" || { scan_process_gone_or_terminal "$SCAN_PID" "$SCAN_START" && continue; return 1; }
+        [ "$PROCESS_CORE_IDENTITY" = "$SCAN_CORE" ] || return 1
+        SCAN_EXE_ID=$PROCESS_EXE_ID
+        SCAN_START=$PROCESS_START
+        read_process_identity "$SCAN_PID" || { scan_process_gone_or_terminal "$SCAN_PID" "$SCAN_START" && continue; return 1; }
+        [ "$PROCESS_CORE_IDENTITY" = "$SCAN_CORE" ] &&
+            [ "$PROCESS_EXE_ID" = "$SCAN_EXE_ID" ] || return 1
+        if [ "$SCAN_EXE_ID" = "$DEST_ID" ]; then
+            MATCH_COUNT=$((MATCH_COUNT + 1))
+            [ "$MATCH_COUNT" -le 1 ] || return 1
+            [ "$SCAN_PID" = "$EXPECTED_MATCH_PID" ] &&
+                [ "$SCAN_START" = "$EXPECTED_MATCH_START" ] &&
+                [ "$PROCESS_EXE_ONE" = "$DEST_BINARY" ] || return 1
+        fi
+    done
+    [ "$MATCH_COUNT" -eq 1 ]
+}
+
+scan_no_proofd() {
+    DEST_ID=$(stat -c '%d|%i|%F|%s' "$DEST_BINARY" 2>/dev/null) || return 1
+    SCAN_COUNT=0
+    for PROCESS_DIR in "$PROCESS_ROOT"/[0-9]*; do
+        [ -d "$PROCESS_DIR" ] || continue
+        SCAN_COUNT=$((SCAN_COUNT + 1))
+        [ "$SCAN_COUNT" -le "$MAX_PROCESSES" ] || return 1
+        SCAN_PID=${PROCESS_DIR##*/}
+        case "$SCAN_PID" in ''|*[!0-9]*) return 1 ;; esac
+        [ "$SCAN_PID" -le "$MAX_PID" ] || return 1
+        read_process_core "$SCAN_PID" || { [ ! -d "$PROCESS_DIR" ] && continue; return 1; }
+        SCAN_CORE=$PROCESS_CORE_IDENTITY
+        SCAN_START=$PROCESS_START
+        case "$PROCESS_STATE" in Z|X|x) continue ;; esac
+        if [ "$((PROCESS_FLAGS & 2097152))" -ne 0 ]; then
+            read_process_core "$SCAN_PID" || { scan_process_gone_or_terminal "$SCAN_PID" "$SCAN_START" && continue; return 1; }
+            [ "$PROCESS_CORE_IDENTITY" = "$SCAN_CORE" ] || return 1
+            continue
+        fi
+        read_process_identity "$SCAN_PID" || { scan_process_gone_or_terminal "$SCAN_PID" "$SCAN_START" && continue; return 1; }
+        [ "$PROCESS_CORE_IDENTITY" = "$SCAN_CORE" ] || return 1
+        SCAN_EXE_ID=$PROCESS_EXE_ID
+        read_process_identity "$SCAN_PID" || { scan_process_gone_or_terminal "$SCAN_PID" "$SCAN_START" && continue; return 1; }
+        [ "$PROCESS_CORE_IDENTITY" = "$SCAN_CORE" ] &&
+            [ "$PROCESS_EXE_ID" = "$SCAN_EXE_ID" ] || return 1
+        [ "$SCAN_EXE_ID" != "$DEST_ID" ] || return 1
+    done
     return 0
 }
 
 validate_heartbeat() {
-    EXPECTED_PID=$1
+    EXPECTED_PID=$1; EXPECTED_START=$2
     is_regular_nonsymlink "$HEARTBEAT" || return 1
     [ "$(stat -L -c '%s' "$HEARTBEAT" 2>/dev/null)" -le 512 ] || return 1
-    HEARTBEAT_VALUES=$(awk -F= -v pid="$EXPECTED_PID" -v hash="$EXPECTED_BINARY_SHA256" '
+    HEARTBEAT_VALUES=$(awk -F= -v pid="$EXPECTED_PID" -v start="$EXPECTED_START" '
         { lines++; if (NF!=2) bad=1 }
-        $1 == "schema" && $2 == "1" { schema++ }
+        $1 == "schema" && $2 == "2" { schema++ }
         $1 == "process" && $2 == "geminitop-proofd" { process++ }
-        $1 == "version" && $2 == "w176-stage4b-proofd-v1" { version++ }
+        $1 == "build" && $2 == "w176-stage4b-proofd-v2" { build++ }
         $1 == "pid" && $2 == pid { found_pid++ }
-        $1 == "started" && $2 == "1" { started++ }
+        $1 == "start_ticks" && $2 == start { found_start++ }
         $1 == "state" && $2 == "running" { running++ }
-        $1 == "heartbeat_sequence" && $2 ~ /^[0-9]+$/ { sequence=$2; sequences++ }
-        $1 == "binary_sha256" && $2 == hash { found_hash++ }
-        END { if (!bad && lines==8 && schema==1 && process==1 && version==1 && found_pid==1 && started==1 && running==1 && sequences==1 && found_hash==1) print sequence; else exit 1 }
+        $1 == "sequence" && $2 ~ /^[0-9]+$/ { sequence=$2; sequences++ }
+        END { if (!bad && lines==7 && schema==1 && process==1 && build==1 && found_pid==1 && found_start==1 && running==1 && sequences==1) print sequence; else exit 1 }
     ' "$HEARTBEAT" 2>/dev/null) || return 1
     case "$HEARTBEAT_VALUES" in ''|*[!0-9]*) return 1 ;; esac
     HEARTBEAT_SEQUENCE=$HEARTBEAT_VALUES
@@ -255,20 +388,19 @@ validate_heartbeat() {
 }
 
 validate_owned_heartbeat() {
-    OWNED_PID=$1
+    OWNED_PID=$1; OWNED_START=$2
     is_regular_nonsymlink "$HEARTBEAT" || return 1
     [ "$(stat -L -c '%s' "$HEARTBEAT" 2>/dev/null)" -le 512 ] || return 1
-    awk -F= -v pid="$OWNED_PID" -v hash="$EXPECTED_BINARY_SHA256" '
+    awk -F= -v pid="$OWNED_PID" -v start="$OWNED_START" '
         {lines++; if(NF!=2) bad=1}
-        $1=="schema"&&$2=="1"{schema++}
+        $1=="schema"&&$2=="2"{schema++}
         $1=="process"&&$2=="geminitop-proofd"{process++}
-        $1=="version"&&$2=="w176-stage4b-proofd-v1"{version++}
+        $1=="build"&&$2=="w176-stage4b-proofd-v2"{build++}
         $1=="pid"&&$2==pid{found_pid++}
-        $1=="started"&&$2=="1"{started++}
+        $1=="start_ticks"&&$2==start{found_start++}
         $1=="state"&&$2=="stopped"{state++}
-        $1=="heartbeat_sequence"&&$2 ~ /^[0-9]+$/{sequence++}
-        $1=="binary_sha256"&&$2==hash{found_hash++}
-        END{exit !(!bad&&lines==8&&schema==1&&process==1&&version==1&&found_pid==1&&started==1&&state==1&&sequence==1&&found_hash==1)}
+        $1=="sequence"&&$2 ~ /^[0-9]+$/{sequence++}
+        END{exit !(!bad&&lines==7&&schema==1&&process==1&&build==1&&found_pid==1&&found_start==1&&state==1&&sequence==1)}
     ' "$HEARTBEAT" >/dev/null 2>&1
 }
 
@@ -307,7 +439,7 @@ validate_install_record() {
         {lines++; if(NF!=2) bad=1}
         $1=="schema"&&$2=="1"{schema++}
         $1=="pid"&&$2 ~ /^[0-9]+$/{pid=$2;p++}
-        $1=="start_time"&&$2 ~ /^[0-9]+$/{start=$2;s++}
+        $1=="start_ticks"&&$2 ~ /^[0-9]+$/{start=$2;s++}
         $1=="exe"&&$2==exe{e++}
         $1=="cwd"&&$2=="/tmp"{cwd++}
         $1=="binary_sha256"&&$2==hash{h++}
@@ -331,7 +463,7 @@ validate_manifest() {
         $1=="owner" && $2=="GeminiTop" {owner++}
         $1=="target" && $2=="w176-ntg5" {target++}
         $1=="component" && $2=="geminitop-proofd" {component++}
-        $1=="version" && $2=="w176-stage4b-proofd-v1" {version++}
+        $1=="version" && $2=="w176-stage4b-proofd-v2" {version++}
         $1=="binary_sha256" && $2==hash {found_hash++}
         $1=="binary_size" && $2==size {found_size++}
         $1=="installed_path" && $2==path {found_path++}

@@ -93,7 +93,7 @@ printf '%s\n' \
     "owner=GeminiTop" \
     "target=w176-ntg5" \
     "component=geminitop-proofd" \
-    "version=w176-stage4b-proofd-v1" \
+    "version=w176-stage4b-proofd-v2" \
     "binary_sha256=$EXPECTED_BINARY_SHA256" \
     "binary_size=$EXPECTED_BINARY_SIZE" \
     "installed_path=$DEST_BINARY" > "$STAGE_DIR/manifest.txt.tmp" || abort_install "manifest_write_failed"
@@ -109,7 +109,7 @@ validate_manifest "$DEST_MANIFEST" || abort_install "manifest_invalid"
 validate_nvm_path "$DEST_BINARY" || abort_install "destination_mount_changed"
 validate_nvm_path "$DEST_MANIFEST" || abort_install "manifest_mount_changed"
 
-(cd /tmp && exec "$DEST_BINARY" "$EXPECTED_BINARY_SHA256" </dev/null >/dev/null 2>&1) &
+(cd /tmp && exec "$DEST_BINARY" </dev/null >/dev/null 2>&1) &
 PROCESS_PID=$!
 START_POLLS=0
 PROCESS_READY=0
@@ -117,18 +117,28 @@ while [ "$START_POLLS" -lt 5 ]; do
     sleep 1 || abort_install "launch_wait_failed"
     if read_process_identity "$PROCESS_PID" && [ "$PROCESS_EXE_ONE" = "$DEST_BINARY" ]; then
         PROCESS_START_TIME=$PROCESS_START
-        if validate_process_detached_from_usb "$PROCESS_PID" && validate_heartbeat "$PROCESS_PID"; then PROCESS_READY=1; break; fi
+        if validate_process_detached_from_usb "$PROCESS_PID" && validate_heartbeat "$PROCESS_PID" "$PROCESS_START_TIME"; then PROCESS_READY=1; break; fi
     fi
     START_POLLS=$((START_POLLS + 1))
 done
 [ "$PROCESS_READY" -eq 1 ] || abort_install "process_launch_or_heartbeat_failed"
 INITIAL_SEQUENCE=$HEARTBEAT_SEQUENCE
 validate_hash "$DEST_BINARY" "$EXPECTED_BINARY_SHA256" "$EXPECTED_BINARY_SIZE" || abort_install "running_destination_hash_mismatch"
+scan_unique_proofd "$PROCESS_PID" "$PROCESS_START_TIME" || abort_install "unique_process_coverage_unknown"
+sleep 3 || abort_install "heartbeat_advance_wait_failed"
+read_process_identity "$PROCESS_PID" || abort_install "process_identity_after_wait_unknown"
+[ "$PROCESS_START" = "$PROCESS_START_TIME" ] &&
+    [ "$PROCESS_EXE_ONE" = "$DEST_BINARY" ] || abort_install "process_identity_after_wait_changed"
+validate_process_detached_from_usb "$PROCESS_PID" || abort_install "usb_fd_after_wait_unknown"
+validate_heartbeat "$PROCESS_PID" "$PROCESS_START_TIME" || abort_install "heartbeat_after_wait_invalid"
+[ "$HEARTBEAT_SEQUENCE" -gt "$INITIAL_SEQUENCE" ] || abort_install "heartbeat_not_advanced"
+INITIAL_SEQUENCE=$HEARTBEAT_SEQUENCE
+scan_unique_proofd "$PROCESS_PID" "$PROCESS_START_TIME" || abort_install "unique_process_after_wait_unknown"
 
 printf '%s\n' \
     "schema=1" \
     "pid=$PROCESS_PID" \
-    "start_time=$PROCESS_START_TIME" \
+    "start_ticks=$PROCESS_START_TIME" \
     "exe=$DEST_BINARY" \
     "cwd=/tmp" \
     "binary_sha256=$EXPECTED_BINARY_SHA256" \

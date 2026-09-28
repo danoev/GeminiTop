@@ -8,7 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 PAYLOAD = ROOT / "payload"
-EXPECTED_HASH = "57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6"
+EXPECTED_HASH = "684afd86a067a6e175ed6b7d6c2a0281f1d44c67f62d86431589d1d7bd8c41b8"
 
 
 class ResidencyStaticTests(unittest.TestCase):
@@ -32,10 +32,11 @@ class ResidencyStaticTests(unittest.TestCase):
         text = (ROOT / "geminitop-proofd.c").read_text()
         self.assertIn('"/tmp/geminitop-proofd.status"', text)
         for token in (
-            "/dev/", "/media/", "/proc/", "/sys/", "socket(", "connect(",
+            "/dev/", "/media/", "/sys/", "socket(", "connect(",
             "listen(", "ioctl(", "canbox", "hc_mcu", "Launcher",
         ):
             self.assertNotIn(token, text)
+        self.assertIn('"/proc/self/stat"', text)
 
     def test_persistent_path_is_dedicated_and_non_shadowing(self) -> None:
         common = (PAYLOAD / "common.sh").read_text()
