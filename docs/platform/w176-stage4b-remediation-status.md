@@ -23,7 +23,9 @@ name/size, matching mountinfo root `/`, and no deeper covering mount for each
 proposed child. A same-device bind of another subtree is rejected. These
 checks passed disposable Linux fixtures; target `/proc/self/mountinfo` and
 `df` presentation remain physically unverified, so a mismatch must fail
-closed.
+closed. The lexical `/dev/mtdblock12` source plus `mtd12` table entry still
+needs an independent target device-node major/minor binding review; these
+tests do not prove the node itself maps to the expected MTD partition.
 
 Mandatory hash, kernel, mount and free-space producers are now status-checked
 before parsing. The source binary is hash-checked, then copied through one
@@ -104,10 +106,13 @@ hash failure and a first-file-delete partial uninstall, but not every variant.
 The historical daemon's heartbeat has no kernel start-time field; exact-run
 heartbeat ownership and post-TERM cleanup semantics require a reviewed design
 decision. Changing the ARM binary would violate this task's exact-binary
-retention gate until explicitly evaluated and rebuilt twice. Further full
-historical regression and static ABI verification are also required after
-these changes. Thus no v2 independent review prompt is issued and physical
-Stage-4B remains **NO-GO**.
+retention gate until explicitly evaluated and rebuilt twice. The ordinary
+historical Python regressions and static ABI audit passed after these changes;
+privileged disposable FAT/mount checks and the complete Stage-4B fault matrix
+have not. The uninstaller deliberately requires the original recorded
+run, but duplicate execution of the same destination and late PID reuse are
+not yet exhaustively excluded. Thus no v2 independent review prompt is issued
+and physical Stage-4B remains **NO-GO**.
 
 No stock file, init, Launcher, NVM `bin`/`lib`, MTD payload, CAN/MCU, network,
 or boot-persistence path is intentionally touched. Host tests execute only
