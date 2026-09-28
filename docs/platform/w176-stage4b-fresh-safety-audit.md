@@ -44,10 +44,12 @@ Stage-4B failure-injection suite after remediation.
    binds the mount source to that partition. It does not calculate the
    effective deepest mount for `geminitop`, `w176`, or staging paths, so a
    covering nested mount can redirect the first persistent write. The
-   sanitised Stage-2 record does not preserve the exact physical mount-source
-   token needed for a strict binding. That value must be recovered from the
-   original validated Stage-2 capture or a separately reviewed read-only
-   metadata capture; do not guess it from reference firmware.
+   sanitised Stage-2 record did not preserve the exact physical mount-source
+   token needed for a strict binding. **Update:** the successful Stage-1
+   runtime mount snapshot was subsequently recovered and confirms source
+   `/dev/mtdblock12` at canonical mountpoint `/tmp/sp/media/flash/nvm`.
+   See `w176-stage4b-nvm-mount-source.md`. The historical script still lacks
+   the required binding and effective-mount proof.
 2. **Mandatory command failures can be masked.** `common.sh:40` pipes
    `sha256sum` into `awk`, and lines 66 and 75 similarly pipe `dd`/`df` into
    parsers. With no `pipefail` in POSIX sh, a producer that prints plausible
