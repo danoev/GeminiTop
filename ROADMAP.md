@@ -307,7 +307,7 @@ offline static trace of the validated installed v2.0.61 MCU library.
 
 # Phase 4B — First resident GeminiTop process
 
-**Status: IN PROGRESS — host-only review candidate prepared**
+**Status: IN PROGRESS — historical candidate NOT READY after fresh safety audit**
 
 Goal:
 
@@ -321,9 +321,13 @@ post-removal verification, and exact-allowlist uninstall actions, and leaves
 its heartbeat in `/tmp`. Boot persistence, stock-file modification,
 `nvm/bin`/`nvm/lib` shadowing, networking, CAN, and MCU access are excluded.
 
-The proof ELF has passed clean reproducible builds and static ABI/import
+The proof ELF has passed fresh clean reproducible builds and static ABI/import
 inspection. Disposable Linux tests use a host-native stand-in and do not
-execute the ARM ELF. No Stage-4B target write or physical run has occurred.
+execute the ARM ELF. A fresh audit found unresolved HIGH first-write,
+process-identity, rollback, and uninstall issues; see
+`docs/platform/w176-stage4b-fresh-safety-audit.md`. No new frozen Stage-4B
+implementation or review-ready payload exists. No Stage-4B target write or
+physical run has occurred.
 
 Stage 4A and 4B retain separate payload/review boundaries. Stage-4A physical
 success does not grant Stage-4B GO.

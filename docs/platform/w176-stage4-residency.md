@@ -1,6 +1,9 @@
 # W176 Stage-4B persistent-residency candidate
 
-Status: prepared host-side for independent review; never physically run.
+Status: **historical host-only baseline, NOT READY for physical review or
+execution** after the fresh 2026-09-28 audit. Never physically run. See
+`w176-stage4b-fresh-safety-audit.md` for unresolved HIGH findings; the claims
+below describe intended design, not a currently approved safety gate.
 
 ## Evidence boundary
 

@@ -17,7 +17,8 @@ capture completed physically on 2026-09-28 and its exact host analyser passed
 translation path supported as an inference; process-FD coverage was partial.
 The earlier interrupted, failed, and NO-GO candidates remain historical.
 Offline analysis of the installed MCU library and a separately reviewed
-Stage-4B residency proof are next. Persistent installation is not confirmed.
+Stage-4B residency proof are next. The historical Stage-4B payload is **not
+ready** after a fresh safety audit; persistent installation is not confirmed.
 
 The immediate goal is to understand the installed RoadTop hardware and software
 safely, establish its exact characteristics, and develop a Mercedes-Benz

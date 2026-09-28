@@ -1,4 +1,9 @@
-# Ready-to-paste independent Work review — W176 Stage-4B
+# Independent Work review — W176 Stage-4B (HISTORICAL / SUPERSEDED)
+
+**Do not use this prompt to approve physical action.** A fresh 2026-09-28
+audit found unresolved HIGH issues in the historical payload; see
+`docs/platform/w176-stage4b-fresh-safety-audit.md`. No new frozen Stage-4B
+implementation or v2 review prompt exists yet.
 
 Perform a **FRESH, READ-ONLY, INDEPENDENT safety review** of the GeminiTop
 W176 Stage-4B persistent-residency candidate.

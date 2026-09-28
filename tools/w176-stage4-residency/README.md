@@ -1,7 +1,9 @@
 # W176 Stage-4B persistent-residency candidate
 
-Status: host-only candidate for independent safety review. No physical run or
-NVM write is authorised by this directory.
+Status: historical host-only candidate, **NOT READY** after the 2026-09-28
+fresh safety audit in `docs/platform/w176-stage4b-fresh-safety-audit.md`.
+The earlier review prompt is superseded. Do not arm or physically run these
+scripts. No physical run or NVM write is authorised by this directory.
 
 ## Confirmed storage boundary
 

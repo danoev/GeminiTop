@@ -129,8 +129,14 @@ No audio-routing patch or MCU command belongs in the common-platform phase.
 
 ## C. Illumination
 
-- REFERENCE ONLY: the investigation vocabulary includes HcCar type 8,
-  `0x17`/`0x18` internal illumination Boolean candidates, and `DayNightMode`.
+- CONFIRMED installed v2.0.61 static code: the captured
+  `libappmcucommunication.so.1.0.0` handles HcCar outer type 8 with
+  `0x17`/`0x18` branches to `Setting::iLLLightStatus(bool)`; the `0x17` true
+  call is gated by stored headlamp status. See
+  `docs/platform/w176-installed-mcu-static-trace.md`. These are internal
+  values, not Mercedes CAN IDs or physical-event correlation.
+- REFERENCE ONLY: broader `DayNightMode` behaviour outside the captured
+  installed library remains reference evidence.
 - INFERENCE: UI day/night state may have both an internal Roadtop source and an
   OEM Mercedes source; their relationship must be measured.
 - UNKNOWN: message direction, semantics, timing, transport, and whether the
