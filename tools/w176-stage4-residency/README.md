@@ -4,6 +4,9 @@ Status: historical host-only candidate, **NOT READY** after the 2026-09-28
 fresh safety audit in `docs/platform/w176-stage4b-fresh-safety-audit.md`.
 The earlier review prompt is superseded. Do not arm or physically run these
 scripts. No physical run or NVM write is authorised by this directory.
+The branch's subsequent partial hardening and unresolved gates are tracked in
+`docs/platform/w176-stage4b-remediation-status.md`; the older design summary
+below is not a claim of current approval.
 
 ## Confirmed storage boundary
 

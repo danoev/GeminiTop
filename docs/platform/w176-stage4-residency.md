@@ -2,8 +2,10 @@
 
 Status: **historical host-only baseline, NOT READY for physical review or
 execution** after the fresh 2026-09-28 audit. Never physically run. See
-`w176-stage4b-fresh-safety-audit.md` for unresolved HIGH findings; the claims
-below describe intended design, not a currently approved safety gate.
+`w176-stage4b-fresh-safety-audit.md` for the historical HIGH findings and
+`w176-stage4b-remediation-status.md` for later partial hardening and remaining
+blockers. The claims below describe the old intended design, not a currently
+approved safety gate.
 
 ## Evidence boundary
 

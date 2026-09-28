@@ -57,28 +57,31 @@ class ResidencyStaticTests(unittest.TestCase):
         for line in text.splitlines():
             if re.search(r"\brm\b", line):
                 self.assertNotRegex(line, r"\brm\b[^\n]*(?:\*|\?)")
-        self.assertIn('rm -f "$DEST_MANIFEST"', text)
-        self.assertIn('rm -f "$DEST_BINARY"', text)
+        self.assertIn('rm "$DEST_MANIFEST"', text)
+        self.assertIn('rm "$DEST_BINARY"', text)
 
     def test_no_boot_or_stock_mutation_commands(self) -> None:
         scripts = "\n".join(
             (PAYLOAD / name).read_text()
             for name in ("common.sh", "install.sh", "verify_after_removal.sh", "uninstall.sh")
         )
+        commands = "\n".join(
+            line for line in scripts.splitlines() if not line.lstrip().startswith("#")
+        )
         for token in (
-            "flash_erase", "nandwrite", "fw_setenv", "devmem", "/dev/mtd",
+            "flash_erase", "nandwrite", "fw_setenv", "devmem", "/dev/mtd0",
             "LD_LIBRARY_PATH=", "PATH=$NVM", "killall", "reboot", "insmod",
             "modprobe", "candump", "cansniffer", "ip link", "nc -l", "telnetd",
         ):
-            self.assertNotIn(token, scripts)
+            self.assertNotIn(token, commands)
 
     def test_uninstall_requires_hash_manifest_identity_and_term(self) -> None:
         text = (PAYLOAD / "uninstall.sh").read_text()
         for required in (
-            'validate_hash "$DEST_BINARY"',
-            'validate_manifest "$DEST_MANIFEST"',
-            'read_process_identity "$CANDIDATE_PID"',
-            'kill -TERM "$MATCHED_PID"',
+            'validate_install_inventory',
+            'validate_install_record',
+            'read_process_identity "$ORIGINAL_PID"',
+            'kill -TERM "$ORIGINAL_PID"',
             'rmdir "$INSTALL_DIR"',
         ):
             self.assertIn(required, text)

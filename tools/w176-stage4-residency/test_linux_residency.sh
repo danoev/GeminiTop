@@ -41,6 +41,9 @@ new_fixture() {
     SYS="$CURRENT/sys"
     DEV="$CURRENT/dev"
     mkdir -p "$USB" "$BIN" "$NVM" "$TARGET/application/bin" "$SYS/block/sda" "$DEV" "$PROC_FIXTURE"
+    NVM_SOURCE="$CURRENT/mtdblock12"
+    : > "$NVM_SOURCE"
+    ln -s "$NVM" "$CURRENT/media-link"
     cp -a "$SOURCE/payload/." "$USB/"
 
     # Host-native stand-in; the committed ARM ELF is never executed.
@@ -56,9 +59,11 @@ new_fixture() {
     printf 'dev: size erasesize name\nmtd12: 00800000 00020000 "nvm"\n' > "$PROC_FIXTURE/mtd"
     printf '1\n' > "$SYS/block/sda/removable"
     : > "$DEV/sda1"
-    printf '/dev/sda1 %s vfat rw,dirsync 0 0\nnvm %s yaffs2 rw,relatime 0 0\n' "$USB" "$NVM" > "$PROC_FIXTURE/mounts"
+    printf '/dev/sda1 %s vfat rw,dirsync 0 0\n%s %s yaffs2 rw,relatime 0 0\n' "$USB" "$NVM_SOURCE" "$NVM" > "$PROC_FIXTURE/mounts"
+    printf '31 20 0:31 / %s rw,relatime - vfat /dev/sda1 rw\n32 20 0:32 / %s rw,relatime - yaffs2 %s rw\n' "$USB" "$NVM" "$NVM_SOURCE" > "$PROC_FIXTURE/mountinfo"
     printf '100000|%s\n' "$NVM" > "$CURRENT/df-spec"
     export DF_SPEC="$CURRENT/df-spec"
+    export NVM_SOURCE
 
     for COMMAND in awk chmod dd dirname grep mkdir mv pwd readlink rm rmdir sed sha256sum sleep stat wc; do
         ln -s "$(command -v "$COMMAND")" "$BIN/$COMMAND"
@@ -67,7 +72,7 @@ new_fixture() {
 #!/bin/sh
 IFS='|' read -r FREE MOUNTPOINT < "$DF_SPEC" || exit 1
 printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
-printf 'fixture 200000 100000 %s 50%% %s\n' "$FREE" "$MOUNTPOINT"
+printf '%s 200000 100000 %s 50%% %s\n' "$NVM_SOURCE" "$FREE" "$MOUNTPOINT"
 EOF
     chmod 755 "$BIN/df"
     cat > "$BIN/heartbeat_writer" <<'EOF'
@@ -98,9 +103,15 @@ EOF
     replace_once "$USB/mount_guard.sh" 'DEV_ROOT=/dev' "DEV_ROOT=$DEV"
     replace_once "$USB/mount_guard.sh" 'DEVICE_TEST=-b' 'DEVICE_TEST=-e'
     replace_once "$USB/common.sh" 'MOUNTS_FILE=/proc/mounts' "MOUNTS_FILE=$PROC_FIXTURE/mounts"
+    replace_once "$USB/common.sh" 'MOUNTINFO_FILE=/proc/self/mountinfo' "MOUNTINFO_FILE=$PROC_FIXTURE/mountinfo"
     replace_once "$USB/common.sh" 'MTD_FILE=/proc/mtd' "MTD_FILE=$PROC_FIXTURE/mtd"
     replace_once "$USB/common.sh" 'KERNEL_RELEASE_FILE=/proc/sys/kernel/osrelease' "KERNEL_RELEASE_FILE=$PROC_FIXTURE/osrelease"
     replace_once "$USB/common.sh" 'NVM_ROOT=/media/flash/nvm' "NVM_ROOT=$NVM"
+    replace_once "$USB/common.sh" 'MEDIA_LINK_PATH=/media' "MEDIA_LINK_PATH=$CURRENT/media-link"
+    replace_once "$USB/common.sh" 'EXPECTED_MEDIA_LINK=/tmp/sp/media/' "EXPECTED_MEDIA_LINK=$NVM"
+    replace_once "$USB/common.sh" 'EXPECTED_NVM_CANONICAL=/tmp/sp/media/flash/nvm' "EXPECTED_NVM_CANONICAL=$NVM"
+    replace_once "$USB/common.sh" 'EXPECTED_NVM_SOURCE=/dev/mtdblock12' "EXPECTED_NVM_SOURCE=$NVM_SOURCE"
+    replace_once "$USB/common.sh" 'NVM_SOURCE_TEST=-b' 'NVM_SOURCE_TEST=-e'
     replace_once "$USB/common.sh" 'LAUNCHER_PATH=/application/bin/Launcher' "LAUNCHER_PATH=$TARGET/application/bin/Launcher"
     replace_once "$USB/common.sh" 'APPINFO_PATH=/application/appinfo.rc' "APPINFO_PATH=$TARGET/application/appinfo.rc"
     replace_once "$USB/common.sh" 'EXPECTED_LAUNCHER_SHA256=5ff83ac9cf9fb2ccb21c90c9b2edb2952581153ec5d5ab4a299787243e1e0c56' "EXPECTED_LAUNCHER_SHA256=$LAUNCHER_HASH"
@@ -122,7 +133,10 @@ record_pass() { PASS_COUNT=$((PASS_COUNT + 1)); printf 'PASS %s\n' "$1"; }
 
 install_clean() {
     arm_install
-    run_payload >/dev/null
+    if ! run_payload >/dev/null; then
+        [ ! -f "$USB/stage4b-install/ERRORS.txt" ] || sed -n '1,12p' "$USB/stage4b-install/ERRORS.txt" >&2
+        exit 1
+    fi
     grep -q '^status=COMPLETE$' "$USB/stage4b-install/STATUS.txt"
     CURRENT_PID=$(awk -F= '$1=="pid" {print $2}' "$USB/stage4b-install/PROCESS.txt")
     kill -0 "$CURRENT_PID"
@@ -142,8 +156,8 @@ grep -q '^result=PASS$' "$USB/stage4b-verify-after-removal/RESULT.txt"
 arm_uninstall
 run_payload >/dev/null
 grep -q '^result=PASS$' "$USB/stage4b-uninstall/RESULT.txt"
-[ ! -e "$NVM/geminitop" ]
-[ ! -e /tmp/geminitop-proofd.status ]
+[ -d "$NVM/geminitop" ] && [ ! -e "$NVM/geminitop/w176" ]
+[ -f /tmp/geminitop-proofd.status ]
 [ "$(sha256sum "$TARGET/application/bin/Launcher" | awk '{print $1}')" = "$STOCK_LAUNCHER_BEFORE" ]
 [ "$(sha256sum "$TARGET/application/appinfo.rc" | awk '{print $1}')" = "$STOCK_APPINFO_BEFORE" ]
 [ ! -e "$NVM/bin" ] && [ ! -e "$NVM/lib" ]
@@ -165,6 +179,73 @@ if run_payload >/dev/null 2>&1; then exit 1; fi
 assert_no_complete stage4b-install
 [ ! -e "$NVM/geminitop" ]
 record_pass wrong_nvm_mount
+
+new_fixture wrong-nvm-source
+sed -i "s|$NVM_SOURCE $NVM yaffs2|$CURRENT/unrelated $NVM yaffs2|" "$PROC_FIXTURE/mounts"
+arm_install
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-install
+[ ! -e "$NVM/geminitop" ]
+record_pass wrong_nvm_source
+
+new_fixture nested-mount
+printf '%s %s/geminitop yaffs2 rw,relatime 0 0\n' "$NVM_SOURCE" "$NVM" >> "$PROC_FIXTURE/mounts"
+printf '33 32 0:33 / %s/geminitop rw,relatime - yaffs2 %s rw\n' "$NVM" "$NVM_SOURCE" >> "$PROC_FIXTURE/mountinfo"
+arm_install
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-install
+[ ! -e "$NVM/geminitop" ]
+record_pass nested_covering_mount
+
+new_fixture same-device-bind
+sed -i "s|32 20 0:32 / $NVM|32 20 0:32 /other-subtree $NVM|" "$PROC_FIXTURE/mountinfo"
+arm_install
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-install
+[ ! -e "$NVM/geminitop" ]
+record_pass same_device_bind
+
+new_fixture hash-producer-error
+rm "$BIN/sha256sum"
+cat > "$BIN/sha256sum" <<'EOF'
+#!/bin/sh
+/usr/bin/sha256sum "$@"
+exit 7
+EOF
+chmod 755 "$BIN/sha256sum"
+arm_install
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-install
+[ ! -e "$NVM/geminitop" ]
+record_pass hash_valid_output_nonzero_exit
+
+new_fixture kernel-producer-error
+rm "$BIN/dd"
+cat > "$BIN/dd" <<'EOF'
+#!/bin/sh
+case "$*" in *osrelease*) printf '4.9.217\n'; exit 7 ;; *) exec /bin/dd "$@" ;; esac
+EOF
+chmod 755 "$BIN/dd"
+arm_install
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-install
+[ ! -e "$NVM/geminitop" ]
+record_pass kernel_valid_output_nonzero_exit
+
+new_fixture df-producer-error
+cat > "$BIN/df" <<'EOF'
+#!/bin/sh
+IFS='|' read -r FREE MOUNTPOINT < "$DF_SPEC" || exit 1
+printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\n'
+printf '%s 200000 100000 %s 50%% %s\n' "$NVM_SOURCE" "$FREE" "$MOUNTPOINT"
+exit 7
+EOF
+chmod 755 "$BIN/df"
+arm_install
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-install
+[ ! -e "$NVM/geminitop" ]
+record_pass df_valid_output_nonzero_exit
 
 new_fixture readonly-nvm
 sed -i 's/ yaffs2 rw,/ yaffs2 ro,/' "$PROC_FIXTURE/mounts"
@@ -216,7 +297,7 @@ chmod 755 "$BIN/sha256sum"
 arm_install
 if run_payload >/dev/null 2>&1; then exit 1; fi
 assert_no_complete stage4b-install
-[ ! -e "$NVM/geminitop" ]
+[ -d "$NVM/geminitop/.w176-stage4b-installing" ]
 record_pass destination_hash_mismatch
 
 new_fixture copy-interruption
@@ -229,7 +310,7 @@ chmod 755 "$BIN/dd"
 arm_install
 if run_payload >/dev/null 2>&1; then exit 1; fi
 assert_no_complete stage4b-install
-[ ! -e "$NVM/geminitop" ]
+[ -d "$NVM/geminitop/.w176-stage4b-installing" ]
 record_pass copy_interruption
 
 new_fixture launch-failure
@@ -237,7 +318,7 @@ replace_once "$USB/install.sh" 'exec "$DEST_BINARY" 300' 'exec /bin/false'
 arm_install
 if run_payload >/dev/null 2>&1; then exit 1; fi
 assert_no_complete stage4b-install
-[ ! -e "$NVM/geminitop" ]
+[ -f "$NVM/geminitop/w176/geminitop-proofd" ]
 record_pass launch_failure
 
 new_fixture heartbeat-failure
@@ -246,8 +327,23 @@ chmod 755 "$BIN/heartbeat_writer"
 arm_install
 if run_payload >/dev/null 2>&1; then exit 1; fi
 assert_no_complete stage4b-install
-[ ! -e "$NVM/geminitop" ]
+[ -f "$NVM/geminitop/w176/geminitop-proofd" ]
 record_pass heartbeat_failure
+
+new_fixture late-result-hash-failure
+rm "$BIN/sha256sum"
+cat > "$BIN/sha256sum" <<'EOF'
+#!/bin/sh
+case "$1" in TARGET.txt) /usr/bin/sha256sum "$@"; exit 7 ;; *) exec /usr/bin/sha256sum "$@" ;; esac
+EOF
+chmod 755 "$BIN/sha256sum"
+arm_install
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-install
+[ -f "$NVM/geminitop/w176/geminitop-proofd" ]
+CURRENT_PID=$(awk -F= '$1=="pid" {print $2}' "$USB/stage4b-install/PROCESS.txt")
+kill -0 "$CURRENT_PID"
+record_pass late_usb_result_hash_failure_preserves_nvm_and_run
 
 new_fixture pid-identity
 install_clean
@@ -258,6 +354,58 @@ if run_payload >/dev/null 2>&1; then exit 1; fi
 assert_no_complete stage4b-verify-after-removal
 record_pass pid_identity_change
 
+new_fixture tampered-install-transaction
+install_clean
+sed -i 's/^start_time=.*/start_time=1/' "$USB/stage4b-install/PROCESS.txt"
+arm_uninstall
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-uninstall
+kill -0 "$CURRENT_PID"
+[ -f "$NVM/geminitop/w176/geminitop-proofd" ]
+record_pass tampered_install_transaction_blocks_uninstall
+
+new_fixture mismatched-heartbeat-pid
+install_clean
+sed -i 's/^pid=.*/pid=999999/' /tmp/geminitop-proofd.status
+arm_uninstall
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-uninstall
+kill -0 "$CURRENT_PID"
+[ -f "$NVM/geminitop/w176/geminitop-proofd" ]
+record_pass heartbeat_pid_mismatch_blocks_term
+
+new_fixture malformed-heartbeat
+install_clean
+printf 'foreign\n' > /tmp/geminitop-proofd.status
+arm_uninstall
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-uninstall
+kill -0 "$CURRENT_PID"
+[ -f "$NVM/geminitop/w176/geminitop-proofd" ]
+record_pass malformed_heartbeat_blocks_term
+
+new_fixture missing-original-process
+install_clean
+kill -TERM "$CURRENT_PID"
+sleep 2
+arm_uninstall
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-uninstall
+[ -f "$NVM/geminitop/w176/geminitop-proofd" ]
+CURRENT_PID=
+record_pass absent_original_process_requires_manual_review
+
+new_fixture symlink-in-install
+install_clean
+rm "$NVM/geminitop/w176/manifest.txt"
+ln -s "$TARGET/application/appinfo.rc" "$NVM/geminitop/w176/manifest.txt"
+arm_uninstall
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-uninstall
+kill -0 "$CURRENT_PID"
+[ -L "$NVM/geminitop/w176/manifest.txt" ]
+record_pass symlink_in_install_blocks_uninstall
+
 new_fixture unexpected-extra
 install_clean
 printf unexpected > "$NVM/geminitop/w176/foreign.file"
@@ -267,6 +415,22 @@ assert_no_complete stage4b-uninstall
 [ "$(cat "$NVM/geminitop/w176/foreign.file")" = unexpected ]
 kill -0 "$CURRENT_PID"
 record_pass unexpected_extra_blocks_uninstall
+
+new_fixture partial-delete
+install_clean
+rm "$BIN/rm"
+cat > "$BIN/rm" <<'EOF'
+#!/bin/sh
+case "$1" in */w176/geminitop-proofd) exit 7 ;; *) exec /bin/rm "$@" ;; esac
+EOF
+chmod 755 "$BIN/rm"
+arm_uninstall
+if run_payload >/dev/null 2>&1; then exit 1; fi
+assert_no_complete stage4b-uninstall
+[ ! -e "$NVM/geminitop/w176/manifest.txt" ]
+[ -f "$NVM/geminitop/w176/geminitop-proofd" ]
+[ -d "$NVM/geminitop/w176" ]
+record_pass partial_delete_stops_without_directory_cleanup
 
 new_fixture wrong-usb
 OTHER="$CURRENT/other"
