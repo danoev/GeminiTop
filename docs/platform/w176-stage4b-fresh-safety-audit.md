@@ -27,6 +27,16 @@ cases, all using a host-native process stand-in. These tests do **not** cover
 the full current Stage-4B safety matrix. Passing them does not close the
 findings below.
 
+Historical host regressions also passed during this audit: Stage-1 (56),
+Stage-2 (43), Stage-3 (24), Stage-4A main (32, one macOS special-object skip),
+Stage-4A TGID (16, one native-Linux skip), Stage-4A lifecycle (12),
+Stage-4A round 2 (22, one macOS special-object skip), target identification
+(10), and firmware inspection (10). Stage-3 disposable FAT mount/concurrency
+and the native-Linux Stage-4A exited-leader tests were **not rerun** in this
+audit. Shell `sh -n`/`dash -n`, Python syntax, JSON parsing, and
+`git diff --check` passed. None of these tests substitutes for a fresh
+Stage-4B failure-injection suite after remediation.
+
 ## Unresolved HIGH findings
 
 1. **First-write mount identity is not proved.** `common.sh:53-65` checks a
