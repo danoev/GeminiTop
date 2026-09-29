@@ -173,6 +173,14 @@ class PreflightFixture(unittest.TestCase):
         self.rehash(root)
         return root
 
+    def mount_record_result(self, root, relative, baseline, original, altered):
+        """Replace the consumed raw record and renew its captured checksum."""
+        self.assertEqual(baseline.count(original), 1)
+        path = root / relative
+        path.write_bytes(baseline.replace(original, altered))
+        self.rehash(root)
+        return analyze(root)["NVM_MOUNT_PRESENTATION"]
+
     def test_complete_metadata_never_proves_execution(self):
         root = self.capture()
         result = analyze(root)
@@ -508,6 +516,193 @@ class PreflightFixture(unittest.TestCase):
                                         "CONFIRMED")
             path.write_bytes(originals[file])
             self.rehash(root)
+
+    def test_raw_mount_record_review_reproductions(self):
+        cases = (
+            ("mountinfo_id", "mounts/mountinfo.txt", b"31 20 31:12 ",
+             b"bad 20 31:12 "),
+            ("mountinfo_parent", "mounts/mountinfo.txt", b"31 20 31:12 ",
+             b"31 bad 31:12 "),
+            ("mounts_dump", "mounts/proc-mounts.txt",
+             b"yaffs2 rw,noatime 0 0\n", b"yaffs2 rw,noatime bad 0\n"),
+            ("mounts_pass", "mounts/proc-mounts.txt",
+             b"yaffs2 rw,noatime 0 0\n", b"yaffs2 rw,noatime 0 bad\n"),
+        )
+        for label, file, old, new in cases:
+            with self.subTest(label=label):
+                self.setUp()
+                root = self.coherent_nvm(self.capture())
+                path = root / file
+                self.assertEqual(path.read_bytes().count(old), 1)
+                path.write_bytes(path.read_bytes().replace(old, new))
+                self.rehash(root)
+                self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"],
+                                 "CONTRADICTORY")
+
+    def test_proc_mounts_complete_record_grammar(self):
+        root = self.coherent_nvm(self.capture())
+        relative = "mounts/proc-mounts.txt"
+        baseline = (root / relative).read_bytes()
+        record = baseline.splitlines(keepends=True)[1]
+        fields = record[:-1].split(b" ")
+        self.assertEqual(len(fields), 6)
+
+        def changed(index, value):
+            result = fields.copy()
+            result[index] = value
+            return result
+
+        cases = (
+            ("dump_bad", changed(4, b"bad")),
+            ("pass_bad", changed(5, b"bad")),
+            ("dump_negative", changed(4, b"-1")),
+            ("pass_negative", changed(5, b"-1")),
+            ("dump_suffix", changed(4, b"0x")),
+            ("pass_suffix", changed(5, b"0x")),
+            ("missing_dump", fields[:4] + fields[5:]),
+            ("missing_pass", fields[:5]),
+            ("extra_field", fields + [b"extra"]),
+            ("empty_source", changed(0, b"")),
+            ("empty_mountpoint", changed(1, b"")),
+            ("empty_filesystem", changed(2, b"")),
+            ("malformed_options", changed(3, b"rw,,noatime")),
+            ("control_source", changed(0, b"/dev/mtd\x00block12")),
+            ("control_mountpoint", changed(1, b"/tmp/sp/\x7fmedia/flash/nvm")),
+            ("bad_source_escape", changed(0, b"/dev/mtd\\xblock12")),
+            ("bad_mountpoint_escape", changed(1, b"/tmp/sp/\\xmedia/flash/nvm")),
+        )
+        self.assertEqual(len(cases), 17)
+        self.assertEqual(self.mount_record_result(root, relative, baseline,
+                                                  record, record), "CONFIRMED")
+        for label, altered in cases:
+            with self.subTest(label=label):
+                self.assertEqual(self.mount_record_result(
+                    root, relative, baseline, record, b" ".join(altered) + b"\n"),
+                    "CONTRADICTORY")
+        # Another record may contain an escaped path; do not decode it loosely.
+        other = baseline.splitlines(keepends=True)[0]
+        self.assertEqual(self.mount_record_result(
+            root, relative, baseline, other,
+            other.replace(b"rootfs ", b"root\\040fs ", 1)), "CONFIRMED")
+        for label, altered in (
+                ("unrelated_bad_escape", other.replace(b"rootfs ", b"root\\xfs ", 1)),
+                ("unrelated_bad_dump", other.replace(b" 0 0\n", b" bad 0\n"))):
+            with self.subTest(label=label):
+                self.assertEqual(self.mount_record_result(
+                    root, relative, baseline, other, altered), "CONTRADICTORY")
+        self.assertEqual(self.mount_record_result(
+            root, relative, baseline, record, record + record), "CONTRADICTORY")
+
+    def test_mountinfo_complete_record_grammar(self):
+        root = self.coherent_nvm(self.capture())
+        relative = "mounts/mountinfo.txt"
+        baseline = (root / relative).read_bytes()
+        record = baseline
+        fields = record[:-1].split(b" ")
+        self.assertEqual(len(fields), 10)
+
+        def changed(index, value):
+            result = fields.copy()
+            result[index] = value
+            return result
+
+        cases = (
+            ("mount_id_bad", changed(0, b"bad")),
+            ("parent_id_bad", changed(1, b"bad")),
+            ("mount_id_negative", changed(0, b"-1")),
+            ("parent_id_negative", changed(1, b"-1")),
+            ("mount_id_suffix", changed(0, b"31x")),
+            ("parent_id_suffix", changed(1, b"20x")),
+            ("mount_id_empty", changed(0, b"")),
+            ("parent_id_empty", changed(1, b"")),
+            ("major_missing", changed(2, b":12")),
+            ("minor_missing", changed(2, b"31:")),
+            ("major_suffix", changed(2, b"31x:12")),
+            ("minor_suffix", changed(2, b"31:12x")),
+            ("extra_colon", changed(2, b"31:12:0")),
+            ("root_empty", changed(3, b"")),
+            ("root_bad_escape", changed(3, b"/dir\\x")),
+            ("mountpoint_empty", changed(4, b"")),
+            ("mountpoint_bad_escape", changed(4, b"/tmp/sp/\\xmedia/flash/nvm")),
+            ("mount_options_bad", changed(5, b"rw,,noatime")),
+            ("separator_missing", fields[:6] + fields[7:]),
+            ("separator_duplicate", fields[:6] + [b"-"] + fields[6:]),
+            ("filesystem_missing", fields[:7] + fields[8:]),
+            ("filesystem_empty", changed(7, b"")),
+            ("source_missing", fields[:8] + fields[9:]),
+            ("source_empty", changed(8, b"")),
+            ("source_bad_escape", changed(8, b"/dev/mtd\\xblock12")),
+            ("super_options_missing", fields[:9]),
+            ("super_options_bad", changed(9, b"rw,ro\x00")),
+            ("root_control", changed(3, b"/\x00")),
+            ("mountpoint_control", changed(4, b"/tmp/sp/\x7fmedia/flash/nvm")),
+            ("filesystem_control", changed(7, b"ya\x01ffs2")),
+            ("source_control", changed(8, b"/dev/mtd\x00block12")),
+            ("optional_empty_tag", fields[:6] + [b":value"] + fields[6:]),
+            ("optional_empty_value", fields[:6] + [b"future:"] + fields[6:]),
+            ("optional_bad_escape", fields[:6] + [b"future:\\x"] + fields[6:]),
+            ("optional_control", fields[:6] + [b"future:\x00"] + fields[6:]),
+        )
+        self.assertEqual(len(cases), 35)
+        self.assertEqual(self.mount_record_result(root, relative, baseline,
+                                                  record, record), "CONFIRMED")
+        for label, altered in cases:
+            with self.subTest(label=label):
+                self.assertEqual(self.mount_record_result(
+                    root, relative, baseline, record, b" ".join(altered) + b"\n"),
+                    "CONTRADICTORY")
+        valid = (
+            fields[:6] + [b"future:visible\\040value"] + fields[6:],
+            changed(0, b"0"),
+            changed(1, b"0"),
+            fields[:6] + [b"new-tag"] + fields[6:],
+            fields[:6] + [b"future:one", b"another:two"] + fields[6:],
+        )
+        for altered in valid:
+            with self.subTest(valid=altered):
+                self.assertEqual(self.mount_record_result(
+                    root, relative, baseline, record, b" ".join(altered) + b"\n"),
+                    "CONFIRMED")
+        unrelated = (b"32 31 0:1 /dir\\040name /other\\040point rw "
+                     b"future:value - tmpfs none rw\n")
+        self.assertEqual(self.mount_record_result(root, relative, baseline,
+                                                  record, unrelated + record), "CONFIRMED")
+        for label, unrelated_bad in (
+                ("unrelated_bad_id",
+                 b"bad 31 0:1 /dir /other rw future:value - tmpfs none rw\n"),
+                ("unrelated_bad_escape",
+                 b"32 31 0:1 /dir\\x /other rw future:value - tmpfs none rw\n")):
+            with self.subTest(label=label):
+                self.assertEqual(self.mount_record_result(
+                    root, relative, baseline, record, unrelated_bad + record),
+                    "CONTRADICTORY")
+        self.assertEqual(self.mount_record_result(
+            root, relative, baseline, record, record + record), "CONTRADICTORY")
+
+    def test_raw_mount_text_control_matrix(self):
+        root = self.coherent_nvm(self.capture())
+        mounts = "mounts/proc-mounts.txt"
+        info = "mounts/mountinfo.txt"
+        originals = {name: (root / name).read_bytes() for name in (mounts, info)}
+        records = {mounts: originals[mounts].splitlines(keepends=True)[1],
+                   info: originals[info]}
+        # All required textual positions plus one open-ended optional tag.
+        positions = ((mounts, 0), (mounts, 1), (mounts, 2),
+                     (info, 3), (info, 4), (info, 7), (info, 8),
+                     (info, 6))
+        self.assertEqual(len(positions), 8)
+        for relative, index in positions:
+            record = records[relative]
+            fields = record[:-1].split(b" ")
+            if relative == info and index == 6:
+                fields.insert(6, b"future:value")
+            for code in (*range(32), 127):
+                with self.subTest(file=relative, index=index, code=code):
+                    changed = fields.copy()
+                    changed[index] += bytes((code,))
+                    self.assertNotEqual(self.mount_record_result(
+                        root, relative, originals[relative], record,
+                        b" ".join(changed) + b"\n"), "CONFIRMED")
 
     def test_final_review_absent_mount_evidence_is_not_confirmed(self):
         root = self.coherent_nvm(self.capture())

@@ -58,7 +58,16 @@ record fields, empty comma tokens, duplicate tokens and key/value tokens with
 an empty side are contradictory. Printable non-whitespace options such as
 `foo=bar`, visible paths and backslash escape text remain admissible. This is
 a conservative evidence grammar, not a claim that every vendor option was
-observed on the installed unit. Libc wrapper `OBSERVED`
+observed on the installed unit. Complete raw-record validation precedes NVM
+semantics: `/proc/mounts` requires six fields including decimal dump/pass;
+mountinfo requires decimal mount/parent IDs and major:minor, textual
+root/point/source/type, parsed options, any structurally valid unknown
+`tag[:value]` optional fields, and its separator at the required position.
+Zero IDs are accepted as syntax only. Text is not unescaped: each literal
+backslash must introduce exactly three octal digits, while ordinary visible
+text remains permitted. Any malformed captured record makes the required
+view `CONTRADICTORY`, before a positive NVM association can be inferred.
+Libc wrapper `OBSERVED`
 requires a defined, externally visible ELF32 ARM function in a provenance-bound
 ET_DYN loadable shared image with bounded PT_LOAD/PT_DYNAMIC, matching dynamic
 string/symbol tables and `libc.so.6` SONAME. The symbol entry (and its stated

@@ -289,6 +289,58 @@ def mount_view_fields(data):
     return [line.split(" ") for line in lines]
 
 
+def mount_text_field(field):
+    """Accept visible proc text, preserving rather than decoding octal escapes."""
+    if not field or any(not char.isprintable() or char.isspace() for char in field):
+        return False
+    index = 0
+    while index < len(field):
+        if field[index] == "\\":
+            if (index + 4 > len(field) or
+                    any(char not in "01234567" for char in field[index + 1:index + 4])):
+                return False
+            index += 4
+        else:
+            index += 1
+    return True
+
+
+def mount_decimal(field):
+    """A proc decimal field has ASCII digits only; zero is syntactically valid."""
+    return re.fullmatch(r"[0-9]+", field) is not None
+
+
+def proc_mounts_record(fields):
+    """Validate all six raw /proc/mounts fields before NVM interpretation."""
+    if len(fields) != 6:
+        return False
+    source, point, fstype, options, dump, pass_number = fields
+    return (all(mount_text_field(value) for value in (source, point, fstype))
+            and mount_option_tokens(options) is not None
+            and mount_decimal(dump) and mount_decimal(pass_number))
+
+
+def mountinfo_record(fields):
+    """Validate required and open-ended optional mountinfo fields."""
+    separator = len(fields) - 4
+    if separator < 6 or fields[separator] != "-" or "-" in fields[6:separator]:
+        return False
+    if (not mount_decimal(fields[0]) or not mount_decimal(fields[1]) or
+            re.fullmatch(r"[0-9]+:[0-9]+", fields[2]) is None):
+        return False
+    if not all(mount_text_field(fields[index]) for index in (3, 4, separator + 1,
+                                                              separator + 2)):
+        return False
+    if (mount_option_tokens(fields[5]) is None or
+            mount_option_tokens(fields[separator + 3]) is None):
+        return False
+    for field in fields[6:separator]:
+        tag, colon, value = field.partition(":")
+        if not mount_text_field(tag) or (colon and not mount_text_field(value)):
+            return False
+    return True
+
+
 def mount_presentation(files, objects):
     """Classify NVM association; a missing physical link cannot be confirmed."""
 
@@ -301,12 +353,10 @@ def mount_presentation(files, objects):
     infos = mount_view_fields(files["mounts/mountinfo.txt"])
     if mounts is None or infos is None:
         return "CONTRADICTORY"
-    if any(len(r) != 6 or not all(r) for r in mounts):
+    if any(not proc_mounts_record(r) for r in mounts):
         return "CONTRADICTORY"
-    for r in infos:
-        sep = r.index("-") if "-" in r else -1
-        if sep < 6 or len(r) != sep + 4 or not all(r):
-            return "CONTRADICTORY"
+    if any(not mountinfo_record(r) for r in infos):
+        return "CONTRADICTORY"
     mount = [r for r in mounts if r[1] == path]
     info = [r for r in infos if r[4] == path]
     if not mount and not info:
@@ -314,15 +364,14 @@ def mount_presentation(files, objects):
     if len(mount) != 1 or len(info) != 1:
         return "CONTRADICTORY"
     m, i = mount[0], info[0]
-    if (len(m) != 6 or m[0] != "/dev/mtdblock12" or m[2] != "yaffs2"
-            or not writable_options(m[3]) or " - " not in " ".join(i)):
+    if (m[0] != "/dev/mtdblock12" or m[2] != "yaffs2"
+            or not writable_options(m[3])):
         return "CONTRADICTORY"
-    sep = i.index("-") if "-" in i else -1
-    if (sep < 6 or len(i) != sep + 4 or i[3] != "/" or
+    sep = len(i) - 4
+    if (i[3] != "/" or
             not writable_options(i[5]) or not writable_options(i[sep + 3])
             or i[sep + 1:sep + 3] !=
-            ["yaffs2", "/dev/mtdblock12"] or
-            not re.fullmatch(r"[0-9]+:[0-9]+", i[2])):
+            ["yaffs2", "/dev/mtdblock12"]):
         return "CONTRADICTORY"
     major, minor = map(int, i[2].split(":"))
     partial = False

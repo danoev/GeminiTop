@@ -105,7 +105,19 @@ duplicate or conflicting semantic tokens are CONTRADICTORY. Before those
 semantics, the analyser validates the **raw captured** `/proc/mounts` and
 mountinfo text: strict UTF-8, LF record boundaries, literal ASCII-space field
 separators, no literal controls/DEL/non-printable characters, and complete
-record shapes. It never collapses tabs or other whitespace into separators.
+record grammar. It never collapses tabs or other whitespace into separators.
+Every `/proc/mounts` record has exactly six nonempty fields: textual source,
+mountpoint and filesystem, validated options, and ASCII-decimal dump and pass
+fields. Every mountinfo record has ASCII-decimal mount and parent IDs,
+ASCII-decimal `major:minor`, textual root and mountpoint, validated per-mount
+options, zero or more structurally valid `tag[:value]` optional fields, one
+separator in its required position, and textual filesystem/source plus
+validated superblock options. Zero IDs are accepted as decimal syntax, not
+claimed as installed values. Unknown but valid optional tags are accepted.
+Textual fields are preserved verbatim, not decoded: a backslash must start a
+complete three-octal-digit escape; visible non-whitespace text otherwise
+remains admissible. Structural failure in either captured view is
+CONTRADICTORY before NVM-specific source/type/RW or MTD/sysfs comparison.
 Each option field is nonempty and comma-delimited; every token is visible,
 non-whitespace and nonempty, duplicates are rejected, and `key=value` requires
 nonempty key and value. Printable paths, `foo=bar`, additional `=` within a
@@ -113,6 +125,7 @@ value, and visible backslash escape text remain accepted. A malformed required
 view is CONTRADICTORY, not PARTIAL. This fail-closed grammar follows the
 space-delimited, escaped-path presentation in the
 [Linux 4.9 `/proc` mount formatter](https://github.com/torvalds/linux/blob/v4.9/fs/proc_namespace.c)
+and the [kernel mountinfo field description](https://www.kernel.org/doc/html/latest/filesystems/proc.html)
 as REFERENCE ONLY; it does not assert a vendor extension or installed value.
 It also requires
 mountinfo major:minor, logical `/media` link, block node, matching dev/block
@@ -160,8 +173,12 @@ falsely observing both an EI_VERSION=0 and an unmapped function value before
 that analyser-only remediation. The later frozen `bf8b87d` analyser was
 reproduced falsely confirming six checksum-valid captures containing
 `rw,ro\x00` or `rw,\x00` in each of the three required option fields.
-This round adds control-byte and visible-option fixtures without changing
-the payload. Fixtures cover real-guard collector
+The later frozen `3da1e48` analyser was reproduced falsely confirming four
+checksum-valid captures with `bad` mountinfo mount/parent IDs or `bad`
+`/proc/mounts` dump/pass fields. This round validates complete raw records,
+adds 58 malformed structural cases, 264 textual-control injections and
+positive unknown-tag/escaped-path cases without changing the payload.
+Fixtures cover real-guard collector
 integration, FAT identity, stacked/deeper mounts, byte/record/line ceilings,
 native FIFO short reads, NVM contradiction/partial/coherent cases,
 defined/undefined/hidden ET_DYN ELF
