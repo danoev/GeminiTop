@@ -219,31 +219,68 @@ metadata_line kallsyms "$PROC/kallsyms"
 capture_virtual proc_config "$PROC/config.gz" 262144 kernel/proc-config.gz optional
 capture boot_config "$ROOT/boot/config-4.9.217" 524288 kernel/boot-config.txt optional
 
-# Bounded kallsyms prefix, exact-name filter; never export addresses. A
-# missing name (even in a complete prefix) never establishes absence.
+# Read limit+one block; only complete newline-terminated records within the
+# accepted 512 KiB prefix may contribute positive symbols. Never export
+# addresses, and never infer absence from this bounded view.
 if [ ! -L "$PROC/kallsyms" ] && [ -f "$PROC/kallsyms" ]; then
-    if dd if="$PROC/kallsyms" of=.kallsyms-prefix.tmp bs=4096 count=128 2>/dev/null; then
+    if dd if="$PROC/kallsyms" of=.kallsyms-prefix.tmp bs=4096 count=129 2>/dev/null; then
         RAW_SIZE=$(stat -c '%s' .kallsyms-prefix.tmp 2>/dev/null) || RAW_SIZE=0
-        if [ "$RAW_SIZE" -le 524288 ] &&
-           awk 'NF >= 3 && $3 ~ /(^|_)(memfd_create|execveat|shmem_add_seals|shmem_get_seals)$/ { print $3 }' \
-               .kallsyms-prefix.tmp > kernel/symbol-names.txt &&
+        if [ "$RAW_SIZE" -gt 524288 ]; then
+            if dd if=.kallsyms-prefix.tmp of=.kallsyms-cut.tmp bs=4096 count=128 2>/dev/null; then
+                SYMBOL_SOURCE=.kallsyms-cut.tmp
+                SYMBOL_SIZE=524288
+                optional_unknown "kallsyms:truncated_prefix"
+            else SYMBOL_SOURCE=; optional_unknown "kallsyms:truncate_failed"; fi
+        else
+            SYMBOL_SOURCE=.kallsyms-prefix.tmp
+            SYMBOL_SIZE=$RAW_SIZE
+            optional_unknown "kallsyms:bounded_no_absence_claim"
+        fi
+        COMPLETE_LINE=0
+        if [ -n "$SYMBOL_SOURCE" ] && [ "$SYMBOL_SIZE" -gt 0 ]; then
+            LAST=$(dd if="$SYMBOL_SOURCE" bs=1 skip=$((SYMBOL_SIZE - 1)) count=1 2>/dev/null && printf x) || LAST=
+            NEWLINE_X=$(printf '\nx')
+            [ "$LAST" = "$NEWLINE_X" ] && COMPLETE_LINE=1
+        fi
+        if [ -n "$SYMBOL_SOURCE" ] &&
+           awk -v complete="$COMPLETE_LINE" '
+               NF >= 3 && $3 ~ /(^|_)(memfd_create|execveat|shmem_add_seals|shmem_get_seals)$/ { found[NR]=$3 }
+               END { for (i=1; i<=NR; i++) if ((i<NR || complete==1) && (i in found)) {
+                   if (used + length(found[i]) + 1 > 8192) exit 2
+                   print found[i]; used += length(found[i]) + 1
+               } }
+           ' "$SYMBOL_SOURCE" > kernel/symbol-names.txt &&
            [ "$(stat -c '%s' kernel/symbol-names.txt)" -le 8192 ]; then
             register kernel/symbol-names.txt || mandatory_fail symbols_output
-            optional_unknown "kallsyms:prefix_only_no_absence_claim"
-        else optional_unknown "kallsyms:filter_or_limit"; fi
+        else
+            rm -f kernel/symbol-names.txt || mandatory_fail symbols_cleanup
+            optional_unknown "kallsyms:filter_or_limit"
+        fi
     else optional_unknown "kallsyms:read_failed"; fi
 else optional_unknown "kallsyms:absent_or_unsafe"; fi
 rm -f .kallsyms-prefix.tmp || mandatory_fail kallsyms_temp
+rm -f .kallsyms-cut.tmp || mandatory_fail kallsyms_cut_temp
 
 metadata_line media "$ROOT/media"
 metadata_line nvm "$ROOT/tmp/sp/media/flash/nvm"
 metadata_line mtdblock12 "$DEV/mtdblock12"
 metadata_line mtd12 "$SYS/class/mtd/mtd12"
+metadata_line class_block "$SYS/class/block/mtdblock12"
 metadata_line proc_self_fd "$PROC/self/fd"
 metadata_line libc_link "$ROOT/lib/libc.so.6"
 metadata_line loader_link "$ROOT/lib/ld-linux-armhf.so.3"
 metadata_line libc_file "$ROOT/lib/libc-2.30.so"
 metadata_line loader_file "$ROOT/lib/ld-2.30.so"
+# A one-hop, in-scope runtime libc link is recorded explicitly. No arbitrary
+# symlink chain is traversed. Anything else leaves host wrapper proof UNKNOWN.
+LIBC_RESOLVED=UNKNOWN
+if [ -L "$ROOT/lib/libc.so.6" ]; then
+    LIBC_TARGET=$(readlink "$ROOT/lib/libc.so.6" 2>/dev/null) || LIBC_TARGET=
+    case "$LIBC_TARGET" in
+        libc-2.30.so|/lib/libc-2.30.so) LIBC_RESOLVED=/lib/libc-2.30.so ;;
+    esac
+fi
+append_line metadata/objects.txt 16384 "libc_resolved|$LIBC_RESOLVED" || mandatory_fail metadata_full
 if [ -b "$DEV/mtdblock12" ] && [ ! -L "$DEV/mtdblock12" ]; then
     MAJOR_HEX=$(stat -c '%t' "$DEV/mtdblock12" 2>/dev/null) || MAJOR_HEX=
     MINOR_HEX=$(stat -c '%T' "$DEV/mtdblock12" 2>/dev/null) || MINOR_HEX=

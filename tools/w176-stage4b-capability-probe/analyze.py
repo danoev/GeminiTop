@@ -31,8 +31,8 @@ OPTIONAL = {
 }
 OBJECT_LABELS = {
     "proc_config", "boot_config", "kallsyms", "media", "nvm",
-    "mtdblock12", "mtd12", "proc_self_fd", "libc_link", "loader_link",
-    "libc_file", "loader_file", "sys_dev_block",
+    "mtdblock12", "mtd12", "class_block", "proc_self_fd", "libc_link", "loader_link",
+    "libc_file", "loader_file", "libc_resolved", "sys_dev_block",
 }
 LIMITS = MANDATORY | OPTIONAL
 EVIDENCE = set(LIMITS) - {"COMPLETE", "STATUS.txt", "INVENTORY.txt", "checksums.sha256"}
@@ -103,8 +103,8 @@ def kv(data, label, keys):
     return result
 
 
-def elf32_dynsymbols(data):
-    """Return complete ELF32 ARM dynamic symbol names, or None if unverifiable."""
+def elf32_exports(data):
+    """Return usable defined ELF32 ARM dynamic exports, or None if unverifiable."""
     if len(data) < 52 or data[:4] != b"\x7fELF" or data[4:6] != b"\x01\x01":
         return None
     if struct.unpack_from("<H", data, 18)[0] != 40:
@@ -140,7 +140,11 @@ def elf32_dynsymbols(data):
         end = table.find(b"\0", name)
         if end < 0:
             return None
-        found.add(table[name:end])
+        info, other, shndx = struct.unpack_from("<BBH", data, start + index * entry + 12)
+        binding, kind, visibility = info >> 4, info & 15, other & 3
+        if shndx != 0 and shndx < count and binding in (1, 2) and kind == 2 \
+                and visibility in (0, 3):
+            found.add(table[name:end])
     return found
 
 
@@ -161,21 +165,103 @@ def config_lines(data, compressed):
         return None
 
 
-def mount_confirmed(files):
+def linux_dev_numbers(value):
+    """Decode Linux dev_t without depending on the analyser host OS."""
+    dev = int(value)
+    if dev < 0 or dev >= 1 << 64:
+        raise ValueError("invalid Linux st_dev")
+    return ((dev >> 8 & 0xfff) | (dev >> 32 & ~0xfff),
+            (dev & 0xff) | (dev >> 12 & ~0xff))
+
+
+def mount_presentation(files, objects):
+    """Classify NVM association; a missing physical link cannot be confirmed."""
+    path = "/tmp/sp/media/flash/nvm"
+    mount = [r.split() for r in rows(files["mounts/proc-mounts.txt"], "mounts")
+             if len(r.split()) >= 2 and r.split()[1] == path]
+    info = [r.split() for r in rows(files["mounts/mountinfo.txt"], "mountinfo")
+            if len(r.split()) >= 5 and r.split()[4] == path]
+    if not mount and not info:
+        return "UNKNOWN"
+    if len(mount) != 1 or len(info) != 1:
+        return "CONTRADICTORY"
+    m, i = mount[0], info[0]
+    if (len(m) != 6 or m[0] != "/dev/mtdblock12" or m[2] != "yaffs2"
+            or "rw" not in m[3].split(",") or " - " not in " ".join(i)):
+        return "CONTRADICTORY"
+    sep = i.index("-") if "-" in i else -1
+    if (sep < 6 or len(i) != sep + 4 or i[3] != "/" or
+            "rw" not in i[5].split(",") or i[sep + 1:sep + 3] !=
+            ["yaffs2", "/dev/mtdblock12"] or
+            not re.fullmatch(r"[0-9]+:[0-9]+", i[2])):
+        return "CONTRADICTORY"
+    major, minor = map(int, i[2].split(":"))
+    partial = False
+
+    def fields(label, expected_type=None):
+        nonlocal partial
+        raw = objects.get(label, "ABSENT")
+        if raw == "ABSENT":
+            partial = True
+            return None
+        parts = raw.split("|")
+        if len(parts) != 8 or (expected_type and parts[0] != expected_type):
+            raise ValueError("contradictory object type")
+        return parts
+
     try:
-        mount_rows = rows(files["mounts/proc-mounts.txt"], "mounts")
-        info_rows = rows(files["mounts/mountinfo.txt"], "mountinfo")
-    except InvalidCapture:
-        return False
-    mount = [r.split() for r in mount_rows if len(r.split()) >= 4
-             and r.split()[1] == "/tmp/sp/media/flash/nvm"]
-    info = [r.split() for r in info_rows if " - " in r
-            and len(r.split()) >= 10 and r.split()[4] == "/tmp/sp/media/flash/nvm"]
-    return (len(mount) == 1 and mount[0][0] == "/dev/mtdblock12"
-            and mount[0][2] == "yaffs2" and "rw" in mount[0][3].split(",")
-            and len(info) == 1 and info[0][3] == "/"
-            and "rw" in info[0][5].split(",")
-            and info[0][-3:-1] == ["yaffs2", "/dev/mtdblock12"])
+        media = fields("media", "symbolic link")
+        if media and objects.get("media.link", "").rstrip("/") != "/tmp/sp/media":
+            return "CONTRADICTORY"
+        nvm = fields("nvm", "directory")
+        if nvm and linux_dev_numbers(nvm[1]) != (major, minor):
+            return "CONTRADICTORY"
+        node = fields("mtdblock12", "block special file")
+        if node and (int(node[6], 16), int(node[7], 16)) != (major, minor):
+            return "CONTRADICTORY"
+        if objects.get("mtdblock12.link"):
+            return "CONTRADICTORY"
+        assoc = fields("sys_dev_block", "symbolic link")
+        class_block = fields("class_block", "symbolic link")
+        if assoc and not objects.get("sys_dev_block.link", "").rstrip("/").endswith(
+                "/mtdblock12"):
+            return "CONTRADICTORY"
+        if class_block and not objects.get("class_block.link", "").rstrip("/").endswith(
+                "/mtdblock12"):
+            return "CONTRADICTORY"
+        if assoc and class_block:
+            dev_link = objects.get("sys_dev_block.link", "")
+            class_link = objects.get("class_block.link", "")
+            dev_path = os.path.normpath(os.path.join("/sys/dev/block", dev_link))
+            class_path = os.path.normpath(os.path.join("/sys/class/block", class_link))
+            if (dev_path != class_path or not dev_path.startswith("/sys/devices/")
+                    or not dev_path.endswith("/mtdblock12")):
+                return "CONTRADICTORY"
+        mtd = fields("mtd12")
+        if mtd and mtd[0] not in ("directory", "symbolic link"):
+            return "CONTRADICTORY"
+        if mtd and mtd[0] == "symbolic link" and not objects.get(
+                "mtd12.link", "").rstrip("/").endswith("/mtd12"):
+            return "CONTRADICTORY"
+        mtd_lines = rows(files["mounts/proc-mtd.txt"], "proc-mtd")
+        mtd12 = [line for line in mtd_lines if line.startswith("mtd12:")]
+        if len(mtd12) != 1:
+            return "CONTRADICTORY"
+        match = re.fullmatch(r'mtd12: ([0-9a-fA-F]+) ([0-9a-fA-F]+) "([^"]+)"',
+                             mtd12[0])
+        if not match or int(match[1], 16) != 8388608 or match[3] != "nvm":
+            return "CONTRADICTORY"
+        erase_size = int(match[2], 16)
+        for attr, expected in (("name", "nvm"), ("size", "8388608"),
+                               ("dev", "90:24"), ("erasesize", str(erase_size))):
+            key = f"metadata/mtd12-{attr}.txt"
+            if key not in files:
+                partial = True
+            elif files[key].decode("ascii", "strict").strip() != expected:
+                return "CONTRADICTORY"
+    except (ValueError, UnicodeDecodeError, OverflowError):
+        return "CONTRADICTORY"
+    return "PARTIAL" if partial else "CONFIRMED"
 
 
 def analyze(root):
@@ -285,7 +371,10 @@ def analyze(root):
         base = label[:-5] if label.endswith(".link") else label
         if base not in OBJECT_LABELS or label in objects or not value or len(value) > 4096:
             raise InvalidCapture("unknown/duplicate object record")
-        if not label.endswith(".link") and value != "ABSENT" and len(value.split("|")) != 8:
+        if label == "libc_resolved":
+            if value not in ("UNKNOWN", "/lib/libc-2.30.so"):
+                raise InvalidCapture("unsafe libc resolution")
+        elif not label.endswith(".link") and value != "ABSENT" and len(value.split("|")) != 8:
             raise InvalidCapture("malformed object stat")
         objects[label] = value
     if not OBJECT_LABELS.difference({"sys_dev_block"}).issubset(objects):
@@ -308,7 +397,18 @@ def analyze(root):
             if not re.fullmatch(r"[A-Za-z0-9_]+", row):
                 raise InvalidCapture("unsafe symbol")
             symbols.add(row)
-    names = elf32_dynsymbols(files["userspace/libc-2.30.so"]) if "userspace/libc-2.30.so" in files else None
+    libc_copy = files.get("userspace/libc-2.30.so")
+    libc_link = objects.get("libc_link", "").split("|")
+    libc_file = objects.get("libc_file", "").split("|")
+    libc_target = objects.get("libc_link.link")
+    libc_provenance = (
+        libc_copy is not None and libc_link[0] == "symbolic link"
+        and libc_target in ("libc-2.30.so", "/lib/libc-2.30.so")
+        and objects.get("libc_resolved") == "/lib/libc-2.30.so"
+        and len(libc_file) == 8 and libc_file[0] == "regular file"
+        and libc_file[4].isdigit() and int(libc_file[4]) == len(libc_copy)
+    )
+    names = elf32_exports(libc_copy) if libc_provenance else None
     wrappers = {
         name: ("UNKNOWN" if names is None else
                "OBSERVED" if name.encode() in names else "NOT_OBSERVED")
@@ -330,7 +430,7 @@ def analyze(root):
             and has("shmem_add_seals") and has("shmem_get_seals") else "UNKNOWN",
         "TARGET_EXECVEAT_SUPPORT": "SUPPORTED_BY_METADATA" if has("execveat") else "UNKNOWN",
         **{f"TARGET_LIBC_WRAPPER_{name.upper()}": value for name, value in wrappers.items()},
-        "NVM_MOUNT_PRESENTATION": "CONFIRMED" if mount_confirmed(files) else "UNKNOWN",
+        "NVM_MOUNT_PRESENTATION": mount_presentation(files, objects),
         "SEALED_RUNTIME_EXECUTION": "NOT_TESTED",
         "EXECUTION_HIGH": "OPEN",
     }
