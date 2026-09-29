@@ -43,6 +43,8 @@ def synthetic_arm_libc(names, undefined=(), hidden=()):
         struct.pack_into("<II", data, 640 + index * 8, tag, value)
     for index, offset in enumerate(offsets, 1):
         struct.pack_into("<I", data, 384 + index * 16, offset)
+        struct.pack_into("<II", data, 384 + index * 16 + 4,
+                         512 + index * 16, 4)
         struct.pack_into("<BBH", data, 384 + index * 16 + 12,
                          18, 2 if names[index - 1] in hidden else 0,
                          0 if names[index - 1] in undefined else 3)
@@ -50,7 +52,7 @@ def synthetic_arm_libc(names, undefined=(), hidden=()):
     struct.pack_into("<IIIIII", data, 848, 0, 11, 0, 384, 384, (len(names) + 1) * 16)
     struct.pack_into("<I", data, 848 + 24, 1)
     struct.pack_into("<I", data, 848 + 36, 16)
-    struct.pack_into("<IIIIII", data, 888, 0, 1, 0, 0, 512, 16)
+    struct.pack_into("<IIIIII", data, 888, 0, 1, 4, 512, 512, 128)
     return bytes(data)
 
 
@@ -364,6 +366,74 @@ class PreflightFixture(unittest.TestCase):
         self.assertEqual(analyze(self.coherent_nvm(self.capture()))["NVM_MOUNT_PRESENTATION"],
                          "CONFIRMED")
 
+    def test_final_review_contradictory_rw_ro_reproductions(self):
+        cases = (
+            ("mounts_rw_ro", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime", b"yaffs2 rw,ro"),
+            ("mountinfo_rw_ro", "mounts/mountinfo.txt", b"nvm rw,noatime -",
+             b"nvm rw,ro -"),
+            ("superblock_ro", "mounts/mountinfo.txt",
+             b"- yaffs2 /dev/mtdblock12 rw,noatime",
+             b"- yaffs2 /dev/mtdblock12 ro"),
+        )
+        for label, file, old, new in cases:
+            with self.subTest(label=label):
+                self.setUp()
+                root = self.coherent_nvm(self.capture())
+                path = root / file
+                self.assertIn(old, path.read_bytes())
+                path.write_bytes(path.read_bytes().replace(old, new))
+                self.rehash(root)
+                self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"],
+                                 "CONTRADICTORY")
+
+    def test_final_review_mount_option_matrix(self):
+        cases = (
+            ("mounts_ro", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime",
+             b"yaffs2 ro,noatime"),
+            ("mountinfo_ro", "mounts/mountinfo.txt", b"nvm rw,noatime -",
+             b"nvm ro,noatime -"),
+            ("superblock_rw_ro", "mounts/mountinfo.txt",
+             b"- yaffs2 /dev/mtdblock12 rw,noatime",
+             b"- yaffs2 /dev/mtdblock12 rw,ro"),
+            ("duplicate_rw", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime",
+             b"yaffs2 rw,rw"),
+            ("empty_token", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime",
+             b"yaffs2 rw,,noatime"),
+            ("no_rw", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime",
+             b"yaffs2 noatime"),
+            ("substring", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime",
+             b"yaffs2 not-rw,noatime"),
+            ("missing_super_options", "mounts/mountinfo.txt",
+             b"- yaffs2 /dev/mtdblock12 rw,noatime",
+             b"- yaffs2 /dev/mtdblock12"),
+            ("missing_mount_options", "mounts/mountinfo.txt",
+             b"nvm rw,noatime -", b"nvm -"),
+            ("duplicate_separator", "mounts/mountinfo.txt",
+             b"- yaffs2 /dev/mtdblock12 rw,noatime",
+             b"- - yaffs2 /dev/mtdblock12 rw,noatime"),
+        )
+        for label, file, old, new in cases:
+            with self.subTest(label=label):
+                self.setUp()
+                root = self.coherent_nvm(self.capture())
+                path = root / file
+                self.assertIn(old, path.read_bytes())
+                path.write_bytes(path.read_bytes().replace(old, new))
+                self.rehash(root)
+                self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"],
+                                 "CONTRADICTORY")
+
+    def test_final_review_absent_mount_evidence_is_not_confirmed(self):
+        root = self.coherent_nvm(self.capture())
+        mount = root / "mounts/proc-mounts.txt"
+        mount.write_text("rootfs / squashfs ro 0 0\n")
+        self.rehash(root)
+        self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"], "CONTRADICTORY")
+        info = root / "mounts/mountinfo.txt"
+        info.write_text("1 0 0:1 / / ro - rootfs rootfs ro\n")
+        self.rehash(root)
+        self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"], "UNKNOWN")
+
     def test_review_nvm_contradiction_matrix(self):
         cases = (
             ("mount_major_minor", "mounts/mountinfo.txt", b"31:12", b"99:12"),
@@ -463,6 +533,101 @@ class PreflightFixture(unittest.TestCase):
         self.put("lib/libc-2.30.so", image)
         self.assertNotEqual(analyze(self.capture())["TARGET_LIBC_WRAPPER_MEMFD_CREATE"],
                             "OBSERVED")
+
+    def test_final_review_invalid_elf_identification_reproduction(self):
+        image = bytearray(synthetic_arm_libc(("memfd_create",)))
+        image[6] = 0  # EI_VERSION
+        self.put("lib/libc-2.30.so", image)
+        self.assertEqual(analyze(self.capture())["TARGET_LIBC_WRAPPER_MEMFD_CREATE"],
+                         "UNKNOWN")
+
+    def test_final_review_unmapped_symbol_value_reproduction(self):
+        image = bytearray(synthetic_arm_libc(("memfd_create",)))
+        struct.pack_into("<I", image, 384 + 16 + 4, 0xffffffff)
+        self.put("lib/libc-2.30.so", image)
+        self.assertEqual(analyze(self.capture())["TARGET_LIBC_WRAPPER_MEMFD_CREATE"],
+                         "UNKNOWN")
+
+    def test_final_review_executable_export_matrix(self):
+        value_offset = 384 + 16 + 4
+        size_offset = 384 + 16 + 8
+        cases = (
+            ("wrong_class", ((4, "<B", 2),)),
+            ("wrong_endianness", ((5, "<B", 2),)),
+            ("ei_version", ((6, "<B", 0),)),
+            ("e_version", ((20, "<I", 0),)),
+            ("bad_ehsize", ((40, "<H", 0),)),
+            ("wrong_machine", ((18, "<H", 62),)),
+            ("et_rel", ((16, "<H", 1),)),
+            ("et_exec", ((16, "<H", 2),)),
+            ("outside_load", ((value_offset, "<I", 1200),)),
+            ("non_executable", ((76, "<I", 4),)),
+            ("bss_tail", ((68, "<I", 700), (value_offset, "<I", 800))),
+            ("wrapped_load", ((60, "<I", 0xfffffff0),)),
+            ("bad_load_alignment", ((80, "<I", 3),)),
+            ("program_header_bounds", ((28, "<I", 0xffffffff),)),
+            ("dynamic_tag", ((640, "<I", 999),)),
+            ("symbol_table_bounds", ((868, "<I", 0xffffffff),)),
+            ("invalid_symbol_section", ((414, "<H", 99),)),
+            ("section_not_executable", ((896, "<I", 0),)),
+            ("section_value_mismatch", ((900, "<I", 700),)),
+            ("symbol_size_outside_file", ((size_offset, "<I", 600),)),
+            ("overlapping_loads", ((44, "<H", 3),
+                                   (116, "<IIIIIIII", (1, 512, 512, 512,
+                                                       256, 256, 5, 4096)))),
+        )
+        for name in ("memfd_create", "execveat", "fexecve"):
+            with self.subTest(wrapper=name, case="valid_arm"):
+                self.setUp()
+                self.put("lib/libc-2.30.so", synthetic_arm_libc((name,)))
+                self.assertEqual(analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                                 "OBSERVED")
+
+            for label, patches in cases:
+                with self.subTest(wrapper=name, case=label):
+                    self.setUp()
+                    image = bytearray(synthetic_arm_libc((name,)))
+                    for offset, fmt, values in patches:
+                        struct.pack_into(fmt, image, offset,
+                                         *(values if isinstance(values, tuple) else (values,)))
+                    self.put("lib/libc-2.30.so", image)
+                    self.assertEqual(
+                        analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                        "UNKNOWN")
+            with self.subTest(wrapper=name, case="valid_thumb"):
+                self.setUp()
+                image = bytearray(synthetic_arm_libc((name,)))
+                struct.pack_into("<I", image, value_offset, 529)
+                self.put("lib/libc-2.30.so", image)
+                self.assertEqual(analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                                 "OBSERVED")
+            with self.subTest(wrapper=name, case="zero_size_entry"):
+                self.setUp()
+                image = bytearray(synthetic_arm_libc((name,)))
+                struct.pack_into("<I", image, size_offset, 0)
+                self.put("lib/libc-2.30.so", image)
+                self.assertEqual(analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                                 "OBSERVED")
+            with self.subTest(wrapper=name, case="ignored_pt_null_fields"):
+                self.setUp()
+                image = bytearray(synthetic_arm_libc((name,)))
+                struct.pack_into("<H", image, 44, 3)
+                struct.pack_into("<IIIIIIII", image, 116, 0, 0xffffffff,
+                                 0xffffffff, 0, 1, 64, 0, 0)
+                self.put("lib/libc-2.30.so", image)
+                self.assertEqual(analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                                 "OBSERVED")
+
+    def test_final_review_all_wrapper_provenance(self):
+        for name in ("memfd_create", "execveat", "fexecve"):
+            with self.subTest(wrapper=name):
+                self.setUp()
+                self.put("lib/libc-2.30.so", synthetic_arm_libc((name,)))
+                link = self.target / "lib/libc.so.6"
+                link.unlink()
+                link.symlink_to("../other/libc.so")
+                self.assertEqual(analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                                 "UNKNOWN")
 
     def test_second_review_shared_image_structure_matrix(self):
         wrappers = ("memfd_create", "execveat", "fexecve")

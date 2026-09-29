@@ -48,17 +48,24 @@ The host NVM classification is `CONFIRMED`, `PARTIAL`, `CONTRADICTORY`, or
 evidence; unavailable physical associations remain `PARTIAL`. Captured MTD
 name, size, dev, erase size and type are all classified; `nand` or `mlc-nand`
 supports the YAFFS2 association, an unfamiliar/malformed type contradicts it,
-and another recognized family leaves it `PARTIAL`. Libc wrapper `OBSERVED`
+and another recognized family leaves it `PARTIAL`. Each of the `/proc/mounts`
+options, mountinfo per-mount options and mountinfo superblock options must
+contain exactly one `rw` token and no `ro` token; malformed or conflicting
+options are `CONTRADICTORY`. Libc wrapper `OBSERVED`
 requires a defined, externally visible ELF32 ARM function in a provenance-bound
 ET_DYN loadable shared image with bounded PT_LOAD/PT_DYNAMIC, matching dynamic
-string/symbol tables and `libc.so.6` SONAME. ET_REL, ET_EXEC, an import, hidden
+string/symbol tables and `libc.so.6` SONAME. The symbol entry (and its stated
+nonzero size) must map to file-backed bytes of an executable PT_LOAD; the
+Thumb low bit is stripped for the address check. Bad ELF identification,
+out-of-range/overlapping segments, ET_REL, ET_EXEC, an import, hidden
 symbol, out-of-scope link, or malformed copy cannot prove an exported wrapper.
 
 Final logical schema maximum is 2,287,680 bytes and the final acceptance
 ceiling remains 3072 KiB. The largest individual temporary file is
 1,052,672 bytes; the two kallsyms working files can together reach that
 same amount. A deliberately conservative final-plus-temporaries logical
-sum is below 3,355,000 bytes. `output_write_ceiling=NOT_CLAIMED`: FAT block
+sum is 3,354,752 bytes. This analyser-only remediation changes no payload
+writer or bound. `output_write_ceiling=NOT_CLAIMED`: FAT block
 allocation, metadata and repeated writes prevent a physical peak-write
 claim.
 

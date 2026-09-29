@@ -105,7 +105,8 @@ def kv(data, label, keys):
 
 def elf32_exports(data):
     """Return defined exports only from a structurally loadable ARM libc image."""
-    if len(data) < 52 or data[:4] != b"\x7fELF" or data[4:6] != b"\x01\x01":
+    if (len(data) < 52 or data[:4] != b"\x7fELF"
+            or data[4:7] != b"\x01\x01\x01"):
         return None
     if (struct.unpack_from("<HHI", data, 16) != (3, 40, 1)
             or struct.unpack_from("<H", data, 40)[0] != 52):
@@ -117,14 +118,25 @@ def elf32_exports(data):
         return None
     loads, dynamics = [], []
     for index in range(phcount):
-        kind, offset, address, _, filesz, memsz, _, _ = struct.unpack_from(
+        kind, offset, address, _, filesz, memsz, flags, align = struct.unpack_from(
             "<IIIIIIII", data, phoff + index * phentsize)
-        if offset > len(data) or filesz > len(data) - offset or filesz > memsz:
+        if kind not in (1, 2):  # PT_NULL fields, in particular, are undefined.
+            continue
+        if (offset > len(data) or filesz > len(data) - offset or filesz > memsz
+                or address + memsz > 0xffffffff):
             return None
         if kind == 1:  # PT_LOAD
-            loads.append((offset, address, filesz))
+            if align not in (0, 1) and ((align & (align - 1))
+                                         or (address - offset) % align):
+                return None
+            if loads and address < loads[-1][1]:
+                return None
+            loads.append((offset, address, filesz, memsz, flags))
         elif kind == 2:  # PT_DYNAMIC
             dynamics.append((offset, address, filesz))
+    ordered = sorted(loads, key=lambda item: item[1])
+    if any(a[1] + a[3] > b[1] for a, b in zip(ordered, ordered[1:])):
+        return None
     if not loads or len(dynamics) != 1 or dynamics[0][2] < 8 \
             or dynamics[0][2] % 8:
         return None
@@ -132,7 +144,20 @@ def elf32_exports(data):
     def loaded(offset, address, size):
         return any(offset >= lo and size <= length - (offset - lo)
                    and address == va + offset - lo
-                   for lo, va, length in loads if offset - lo <= length)
+                   for lo, va, length, _, _ in loads if offset - lo <= length)
+
+    def executable_symbol(value, size):
+        # AAELF32 marks a Thumb function by setting bit 0 in st_value.
+        # The instruction address is value with that bit stripped.
+        start = value & ~1
+        if not value or ((value & 1) == 0 and (start & 3) != 0):
+            return False
+        extent = size if size else 1  # Zero-size symbols still need an entry byte.
+        return any((flags & 1) and start >= address
+                   and extent <= filesz - (start - address)
+                   and offset + (start - address) < len(data)
+                   for offset, address, filesz, _, flags in loads
+                   if start - address <= filesz)
 
     dynoff, dynaddr, dynsize = dynamics[0]
     if not loaded(dynoff, dynaddr, dynsize):
@@ -158,24 +183,24 @@ def elf32_exports(data):
     for i in range(count):
         off = shoff + i * entsize
         typ = struct.unpack_from("<I", data, off + 4)[0]
-        address, start, size, link = struct.unpack_from("<IIII", data, off + 12)
+        flags, address, start, size, link = struct.unpack_from("<IIIII", data, off + 8)
         entry = struct.unpack_from("<I", data, off + 36)[0]
         if start > len(data) or size > len(data) - start:
             return None
-        sections.append((typ, address, start, size, link, entry))
+        sections.append((typ, flags, address, start, size, link, entry))
     dynsyms = [s for s in sections if s[0] == 11]
     if len(dynsyms) != 1:
         return None
-    _, address, start, size, link, entry = dynsyms[0]
+    _, _, address, start, size, link, entry = dynsyms[0]
     if entry < 16 or size % entry or link >= count or size // entry > 65536:
         return None
     if tags[6] != address or not loaded(start, address, size):
         return None
     strings = sections[link]
-    if (strings[0] != 3 or tags[5] != strings[1] or tags[10] != strings[3]
-            or not loaded(strings[2], strings[1], strings[3])):
+    if (strings[0] != 3 or tags[5] != strings[2] or tags[10] != strings[4]
+            or not loaded(strings[3], strings[2], strings[4])):
         return None
-    table = data[strings[2]:strings[2] + strings[3]]
+    table = data[strings[3]:strings[3] + strings[4]]
     soname = tags[14]
     if soname >= len(table) or table.find(b"\0", soname) < 0 \
             or table[soname:table.find(b"\0", soname)] != b"libc.so.6":
@@ -188,11 +213,26 @@ def elf32_exports(data):
         end = table.find(b"\0", name)
         if end < 0:
             return None
+        value, symbol_size = struct.unpack_from("<II", data, start + index * entry + 4)
         info, other, shndx = struct.unpack_from("<BBH", data, start + index * entry + 12)
         binding, kind, visibility = info >> 4, info & 15, other & 3
-        if shndx != 0 and shndx < count and binding in (1, 2) and kind == 2 \
-                and visibility in (0, 3):
-            found.add(table[name:end])
+        symbol = table[name:end]
+        if (symbol not in (b"memfd_create", b"execveat", b"fexecve")
+                or binding not in (1, 2) or kind != 2 or visibility not in (0, 3)
+                or shndx == 0):
+            continue
+        if shndx >= count:
+            return None
+        section = sections[shndx]
+        extent = symbol_size if symbol_size else 1
+        code_address = value & ~1
+        if (section[0] != 1 or not (section[1] & 4)
+                or code_address < section[2]
+                or extent > section[4] - (code_address - section[2])
+                or not loaded(section[3], section[2], section[4])
+                or not executable_symbol(value, symbol_size)):
+            return None
+        found.add(symbol)
     return found
 
 
@@ -224,6 +264,12 @@ def linux_dev_numbers(value):
 
 def mount_presentation(files, objects):
     """Classify NVM association; a missing physical link cannot be confirmed."""
+
+    def writable_options(field):
+        options = field.split(",")
+        return (all(options) and options.count("rw") == 1
+                and "ro" not in options)
+
     path = "/tmp/sp/media/flash/nvm"
     mount = [r.split() for r in rows(files["mounts/proc-mounts.txt"], "mounts")
              if len(r.split()) >= 2 and r.split()[1] == path]
@@ -235,11 +281,12 @@ def mount_presentation(files, objects):
         return "CONTRADICTORY"
     m, i = mount[0], info[0]
     if (len(m) != 6 or m[0] != "/dev/mtdblock12" or m[2] != "yaffs2"
-            or "rw" not in m[3].split(",") or " - " not in " ".join(i)):
+            or not writable_options(m[3]) or " - " not in " ".join(i)):
         return "CONTRADICTORY"
     sep = i.index("-") if "-" in i else -1
     if (sep < 6 or len(i) != sep + 4 or i[3] != "/" or
-            "rw" not in i[5].split(",") or i[sep + 1:sep + 3] !=
+            not writable_options(i[5]) or not writable_options(i[sep + 3])
+            or i[sep + 1:sep + 3] !=
             ["yaffs2", "/dev/mtdblock12"] or
             not re.fullmatch(r"[0-9]+:[0-9]+", i[2])):
         return "CONTRADICTORY"

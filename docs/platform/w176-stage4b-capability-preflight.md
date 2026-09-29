@@ -86,10 +86,22 @@ function in an ELF32 ARM ET_DYN loadable shared object, plus an exact one-hop
 `/lib/libc.so.6` resolution to the copied `libc-2.30.so` object. Program
 headers must be bounded, PT_LOAD must contain PT_DYNAMIC and the dynamic
 symbol/string tables, required dynamic tags must match those tables, and
-SONAME must be `libc.so.6`. ET_REL/ET_EXEC, malformed structure or unresolved
+SONAME must be `libc.so.6`. ELF identification must state the current version;
+PT_LOAD ranges must be in-file, non-overlapping, aligned and non-wrapping.
+For each requested visible defined function, `st_value` with the ARM Thumb
+indicator bit stripped must locate its entry in file-backed executable
+PT_LOAD bytes. Nonzero `st_size` must fit in that same file-backed range;
+zero-size symbols still require one entry byte. This follows the
+[Arm AAELF32 Thumb symbol convention](https://github.com/ARM-software/abi-aa/blob/main/aaelf32/aaelf32.rst)
+and [ELF PT_LOAD/PF_X semantics](https://refspecs.linuxfoundation.org/elf/gabi4%2B/ch5.pheader.html)
+as reference rules, not an observed installed-target ABI extension.
+ET_REL/ET_EXEC, malformed structure or unresolved
 provenance gives UNKNOWN. An undefined import or hidden symbol in a validated
 image is NOT_OBSERVED, not proof of kernel syscall absence. NVM CONFIRMED
-requires coherent mount source/type/RW,
+requires coherent mount source/type/RW in all three exact option fields:
+`/proc/mounts` options, mountinfo per-mount options and mountinfo superblock
+options. Each must contain exactly one `rw` token and no `ro` token; empty,
+duplicate or conflicting semantic tokens are CONTRADICTORY. It also requires
 mountinfo major:minor, logical `/media` link, block node, matching dev/block
 and class/block sysfs targets, `/proc/mtd` mtd12 identity and sysfs name,
 size, dev, erase-size and type attributes. For the reported YAFFS2/MTD
@@ -129,7 +141,10 @@ minimal native experiment would be needed later; none is built here.
 The frozen `0f65de8` implementation was reproduced failing all five
 first-review findings. The later `d5a608a` implementation was reproduced
 failing the second review's short-read HIGH and MTD-type/ET_REL MEDIUM findings
-before this remediation. Remediation fixtures cover real-guard collector
+before that remediation. The frozen `d7fc83a` implementation was reproduced
+falsely confirming three checksum-valid contradictory RW/RO captures and
+falsely observing both an EI_VERSION=0 and an unmapped function value before
+this analyser-only remediation. Fixtures cover real-guard collector
 integration, FAT identity, stacked/deeper mounts, byte/record/line ceilings,
 native FIFO short reads, NVM contradiction/partial/coherent cases,
 defined/undefined/hidden ET_DYN ELF
@@ -139,7 +154,8 @@ the exact root and a child path. The complete test totals and new frozen
 commit are recorded in the follow-up independent-review brief. These are
 host results, not RoadTop observations.
 
-The sum of allowed final logical file sizes is 2,287,680 bytes. The largest
+No payload writer or mount guard changes in this round. The sum of allowed
+final logical file sizes remains 2,287,680 bytes. The largest
 single temporary file is 1,052,672 bytes; both kallsyms working files can
 coexist at that total. A deliberately conservative final-plus-temporaries
 logical sum is 3,354,752 bytes: 2,287,680 final + 1,052,672 concurrent
