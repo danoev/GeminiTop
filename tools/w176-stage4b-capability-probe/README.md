@@ -29,19 +29,30 @@ Host tests:
 
     python3 -m unittest discover -s tools/w176-stage4b-capability-probe -v
 
-The guard checks bounded `/proc/mounts` and `/proc/self/mountinfo` views
-before lock creation or marker consumption. It rejects stacked/covering
+The guard reads each mount view byte-by-byte with `dd bs=1 count=LIMIT+1`;
+success with at most LIMIT bytes means an actual EOF was reached, while
+LIMIT+1 fails oversized. Unlike `bs=4096 count=17/33`, a short positive read
+cannot exhaust the count early: one counted input block is one byte. This uses
+the basic `bs`/`count` behaviour available in BusyBox 1.29.3, not a GNU-only
+`iflag=fullblock`. Producer nonzero remains a read failure. It rejects stacked/covering
 mounts, ambiguous or malformed records, and filesystem/device identity
 disagreement. `test_linux_mounts.sh` additionally exercises actual FAT and
 stacked-tmpfs mounts inside a disposable privileged Linux container with a
-temporary FAT image; do not run that script on a vehicle or the host.
+temporary FAT image; short-read FIFO fixtures exercise the real guard in Linux.
+Do not run the mount script on a vehicle or the host. These checks establish
+complete bounded views and effective identity at validation time, not immunity
+to a privileged actor remounting between validation and first USB write.
 
 The host NVM classification is `CONFIRMED`, `PARTIAL`, `CONTRADICTORY`, or
 `UNKNOWN`. `CONFIRMED` requires coherent mount, device, MTD and sysfs
-evidence; unavailable physical associations remain `PARTIAL`. Libc wrapper
-`OBSERVED` requires a defined, externally visible ELF32 ARM function in the
-one-hop selected installed libc copy. An import, hidden symbol, out-of-scope
-link, or malformed copy cannot prove an exported wrapper.
+evidence; unavailable physical associations remain `PARTIAL`. Captured MTD
+name, size, dev, erase size and type are all classified; `nand` or `mlc-nand`
+supports the YAFFS2 association, an unfamiliar/malformed type contradicts it,
+and another recognized family leaves it `PARTIAL`. Libc wrapper `OBSERVED`
+requires a defined, externally visible ELF32 ARM function in a provenance-bound
+ET_DYN loadable shared image with bounded PT_LOAD/PT_DYNAMIC, matching dynamic
+string/symbol tables and `libc.so.6` SONAME. ET_REL, ET_EXEC, an import, hidden
+symbol, out-of-scope link, or malformed copy cannot prove an exported wrapper.
 
 Final logical schema maximum is 2,287,680 bytes and the final acceptance
 ceiling remains 3072 KiB. The largest individual temporary file is

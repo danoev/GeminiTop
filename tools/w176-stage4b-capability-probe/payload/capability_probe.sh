@@ -161,8 +161,14 @@ capture_virtual() {
     }
     TEMP="$DEST.tmp"
     rm -f "$TEMP" 2>/dev/null || { mandatory_fail "$LABEL:temp_cleanup"; return 1; }
-    BLOCKS=$((LIMIT / 4096 + 1))
-    if dd if="$SOURCE" of="$TEMP" bs=4096 count="$BLOCKS" 2>/dev/null; then :; else
+    case "$DEST" in
+        mounts/proc-mounts.txt|mounts/mountinfo.txt|mounts/proc-mtd.txt|metadata/mtd12-*.txt)
+            # These files can support NVM CONFIRMED. Do not accept a
+            # short-read prefix as a complete association view.
+            BLOCK_SIZE=1; BLOCKS=$((LIMIT + 1)) ;;
+        *) BLOCK_SIZE=4096; BLOCKS=$((LIMIT / 4096 + 1)) ;;
+    esac
+    if dd if="$SOURCE" of="$TEMP" bs="$BLOCK_SIZE" count="$BLOCKS" 2>/dev/null; then :; else
         rm -f "$TEMP"
         if [ "$NEED" = mandatory ]; then mandatory_fail "$LABEL:producer_failed"
         else optional_unknown "$LABEL:producer_failed"; fi

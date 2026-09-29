@@ -27,8 +27,11 @@ the effective root mount to be read-only SquashFS, with no covering nested
 mount and matching filesystem device identity. Unsafe provenance means no
 copy. Exact regular-file sources are checked before and after a retained,
 bounded descriptor read. Proc/sysfs pseudo-files use finite read counts
-because their reported size can be zero; producer exit status and actual
-output size are checked separately. The /proc/self/mounts read provides the
+because their reported size can be zero. The captured mount/MTD association
+views and mtd12 attributes use byte-granularity LIMIT+1 reads, so their
+bounded copy is complete or marked oversized rather than accepting a
+short-read prefix. Other pseudo-files retain their separately bounded reads;
+producer exit status and actual output size are checked separately. The /proc/self/mounts read provides the
 /proc/mounts view without following its usual symlink.
 
 This capture can reduce the separate mountinfo/sysfs presentation UNKNOWN,
@@ -39,12 +42,25 @@ truncated, contradictory or malformed evidence remains UNKNOWN.
 ## Transaction and analyser
 
 The payload and limits are documented in the candidate README. The USB guard
-reads at most 69,632 bytes from `/proc/mounts` and 135,168 bytes from
+reads at most 65,537 bytes from `/proc/mounts` and 131,073 bytes from
 `/proc/self/mountinfo`, rejecting snapshots above 65,536 and 131,072 bytes
-respectively, before any mutation. It permits at most 256 records and 2,048
+respectively, before any mutation. `dd bs=1 count=LIMIT+1` means the count
+cannot expire after short positive 4-KiB reads: each counted input block is
+one byte. At <=LIMIT bytes, successful `dd` must have reached EOF; at LIMIT+1,
+the guard fails oversized. Nonzero producer status fails separately. This uses
+basic BusyBox 1.29.3 `dd` semantics without assuming `iflag=fullblock`.
+The [BusyBox 1.29 stable `dd` source](https://github.com/mirror/busybox/blob/1_29_stable/coreutils/dd.c)
+counts full or partial input blocks and uses `bs`/`count` independently of
+the optional `iflag` feature; a one-byte block therefore cannot be a short
+positive read.
+It permits at most 256 records and 2,048
 bytes per line in each view. It rejects duplicate or nested covering mounts
 and cross-checks the FAT source, removable block node, mountinfo major:minor
-and the output root's `st_dev`. The result
+and the output root's `st_dev`. This proves complete bounded mount views and
+effective filesystem identity **at validation time**. It does not establish
+resistance to a privileged actor deliberately changing mounts between that
+check and the first USB write; no such adversary is assumed in this passive
+physical-test boundary. The result
 is fresh, USB-only, checksum-covered and exact-inventory. INCOMPLETE is
 written first; COMPLETE is last. The host analyser rejects symlinked or
 unexpected evidence, unsafe paths, oversize files, wrong schema/status,
@@ -66,17 +82,36 @@ Classification vocabulary:
     EXECUTION_HIGH=OPEN
 
 OBSERVED requires a defined, globally/weakly bound, externally visible
-function in a complete ELF32 ARM dynamic symbol table, plus an exact one-hop
-`/lib/libc.so.6` resolution to the copied `libc-2.30.so` object. An undefined
-import or hidden symbol is not an observed wrapper. NOT_OBSERVED requires a
-complete, structurally valid, provenance-bound libc copy; otherwise wrapper
-status is UNKNOWN. NVM CONFIRMED requires coherent mount source/type/RW,
+function in an ELF32 ARM ET_DYN loadable shared object, plus an exact one-hop
+`/lib/libc.so.6` resolution to the copied `libc-2.30.so` object. Program
+headers must be bounded, PT_LOAD must contain PT_DYNAMIC and the dynamic
+symbol/string tables, required dynamic tags must match those tables, and
+SONAME must be `libc.so.6`. ET_REL/ET_EXEC, malformed structure or unresolved
+provenance gives UNKNOWN. An undefined import or hidden symbol in a validated
+image is NOT_OBSERVED, not proof of kernel syscall absence. NVM CONFIRMED
+requires coherent mount source/type/RW,
 mountinfo major:minor, logical `/media` link, block node, matching dev/block
 and class/block sysfs targets, `/proc/mtd` mtd12 identity and sysfs name,
-size and dev attributes. A missing association is PARTIAL, while conflicting
-evidence is CONTRADICTORY. SUPPORTED_BY_METADATA requires coherent config and positive
+size, dev, erase-size and type attributes. For the reported YAFFS2/MTD
+association, upstream Linux MTD type text `nand` or `mlc-nand` permits
+CONFIRMED; a different recognized type is PARTIAL and malformed type is
+CONTRADICTORY. This does not assert the installed unit's type before capture.
+The finite recognized strings come from the
+[Linux 4.9 MTD sysfs type implementation](https://github.com/torvalds/linux/blob/v4.9/drivers/mtd/mtdcore.c).
+A missing association is PARTIAL, while conflicting evidence is CONTRADICTORY.
+SUPPORTED_BY_METADATA requires coherent config and positive
 relevant symbol names where applicable. Neither category permits
 SEALED_RUNTIME_EXECUTION=CONFIRMED.
+
+The NVM association audit evaluates each captured field: both mount views
+must agree on source `/dev/mtdblock12`, YAFFS2, RW, exact path and
+major:minor; the NVM directory's `st_dev` and block node's `rdev` must match
+that pair; the `/media` link must resolve to the expected logical mount path;
+`/sys/dev/block` and `/sys/class/block` links must resolve to the same
+`mtdblock12` object; `/proc/mtd` must identify mtd12 as `nvm` with the
+reviewed size and erase size; and sysfs mtd12 name, size, dev, erase size
+and type must be present and coherent. Missing optional associations reduce
+to PARTIAL. This is metadata presentation only, not a permission to write NVM.
 
 ## Hard limit
 
@@ -92,9 +127,12 @@ minimal native experiment would be needed later; none is built here.
 ## Host verification
 
 The frozen `0f65de8` implementation was reproduced failing all five
-independent-review findings. Remediation fixtures cover real-guard collector
+first-review findings. The later `d5a608a` implementation was reproduced
+failing the second review's short-read HIGH and MTD-type/ET_REL MEDIUM findings
+before this remediation. Remediation fixtures cover real-guard collector
 integration, FAT identity, stacked/deeper mounts, byte/record/line ceilings,
-NVM contradiction/partial/coherent cases, defined/undefined/hidden ELF
+native FIFO short reads, NVM contradiction/partial/coherent cases,
+defined/undefined/hidden ET_DYN ELF
 symbols, out-of-scope libc links and truncated kallsyms records. Separate
 container testing mounts a disposable FAT image and then stacks tmpfs over
 the exact root and a child path. The complete test totals and new frozen
@@ -104,7 +142,8 @@ host results, not RoadTop observations.
 The sum of allowed final logical file sizes is 2,287,680 bytes. The largest
 single temporary file is 1,052,672 bytes; both kallsyms working files can
 coexist at that total. A deliberately conservative final-plus-temporaries
-logical sum is under 3,355,000 bytes. The 3072-KiB final acceptance check
+logical sum is 3,354,752 bytes: 2,287,680 final + 1,052,672 concurrent
+kallsyms temporaries + 14,400 other temporary allowances. The 3072-KiB final acceptance check
 is not a peak-write bound, and FAT write amplification is not claimed.
 
 No stock file, internal NVM, MTD, service, CAN/MCU/UART, or network state was

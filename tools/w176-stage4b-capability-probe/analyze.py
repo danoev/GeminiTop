@@ -104,10 +104,51 @@ def kv(data, label, keys):
 
 
 def elf32_exports(data):
-    """Return usable defined ELF32 ARM dynamic exports, or None if unverifiable."""
+    """Return defined exports only from a structurally loadable ARM libc image."""
     if len(data) < 52 or data[:4] != b"\x7fELF" or data[4:6] != b"\x01\x01":
         return None
-    if struct.unpack_from("<H", data, 18)[0] != 40:
+    if (struct.unpack_from("<HHI", data, 16) != (3, 40, 1)
+            or struct.unpack_from("<H", data, 40)[0] != 52):
+        return None
+    phoff = struct.unpack_from("<I", data, 28)[0]
+    phentsize, phcount = struct.unpack_from("<HH", data, 42)
+    if phentsize != 32 or not 0 < phcount <= 256 or phoff < 52 \
+            or phoff + phentsize * phcount > len(data):
+        return None
+    loads, dynamics = [], []
+    for index in range(phcount):
+        kind, offset, address, _, filesz, memsz, _, _ = struct.unpack_from(
+            "<IIIIIIII", data, phoff + index * phentsize)
+        if offset > len(data) or filesz > len(data) - offset or filesz > memsz:
+            return None
+        if kind == 1:  # PT_LOAD
+            loads.append((offset, address, filesz))
+        elif kind == 2:  # PT_DYNAMIC
+            dynamics.append((offset, address, filesz))
+    if not loads or len(dynamics) != 1 or dynamics[0][2] < 8 \
+            or dynamics[0][2] % 8:
+        return None
+
+    def loaded(offset, address, size):
+        return any(offset >= lo and size <= length - (offset - lo)
+                   and address == va + offset - lo
+                   for lo, va, length in loads if offset - lo <= length)
+
+    dynoff, dynaddr, dynsize = dynamics[0]
+    if not loaded(dynoff, dynaddr, dynsize):
+        return None
+    tags = {}
+    terminated = False
+    for offset in range(dynoff, dynoff + dynsize, 8):
+        tag, value = struct.unpack_from("<II", data, offset)
+        if tag == 0:  # DT_NULL
+            terminated = True
+            break
+        if tag in (5, 6, 10, 11, 14):
+            if tag in tags:
+                return None
+            tags[tag] = value
+    if not terminated or set(tags) != {5, 6, 10, 11, 14} or tags[11] != 16:
         return None
     shoff = struct.unpack_from("<I", data, 32)[0]
     entsize, count = struct.unpack_from("<HH", data, 46)
@@ -117,21 +158,28 @@ def elf32_exports(data):
     for i in range(count):
         off = shoff + i * entsize
         typ = struct.unpack_from("<I", data, off + 4)[0]
-        start, size, link = struct.unpack_from("<III", data, off + 16)
+        address, start, size, link = struct.unpack_from("<IIII", data, off + 12)
         entry = struct.unpack_from("<I", data, off + 36)[0]
         if start > len(data) or size > len(data) - start:
             return None
-        sections.append((typ, start, size, link, entry))
+        sections.append((typ, address, start, size, link, entry))
     dynsyms = [s for s in sections if s[0] == 11]
     if len(dynsyms) != 1:
         return None
-    _, start, size, link, entry = dynsyms[0]
+    _, address, start, size, link, entry = dynsyms[0]
     if entry < 16 or size % entry or link >= count or size // entry > 65536:
         return None
-    strings = sections[link]
-    if strings[0] != 3:
+    if tags[6] != address or not loaded(start, address, size):
         return None
-    table = data[strings[1]:strings[1] + strings[2]]
+    strings = sections[link]
+    if (strings[0] != 3 or tags[5] != strings[1] or tags[10] != strings[3]
+            or not loaded(strings[2], strings[1], strings[3])):
+        return None
+    table = data[strings[2]:strings[2] + strings[3]]
+    soname = tags[14]
+    if soname >= len(table) or table.find(b"\0", soname) < 0 \
+            or table[soname:table.find(b"\0", soname)] != b"libc.so.6":
+        return None
     found = set()
     for index in range(size // entry):
         name = struct.unpack_from("<I", data, start + index * entry)[0]
@@ -259,6 +307,19 @@ def mount_presentation(files, objects):
                 partial = True
             elif files[key].decode("ascii", "strict").strip() != expected:
                 return "CONTRADICTORY"
+        # The captured sibling type is part of the same MTD association.
+        # A different recognized MTD family is incomplete evidence for this
+        # NAND/YAFFS2 presentation; malformed data is contradictory.
+        type_data = files.get("metadata/mtd12-type.txt")
+        if type_data is None:
+            partial = True
+        else:
+            mtd_type = type_data.decode("ascii", "strict")
+            if not re.fullmatch(r"(absent|ram|rom|nor|nand|dataflash|ubi|mlc-nand|unknown)\n",
+                                mtd_type):
+                return "CONTRADICTORY"
+            if mtd_type not in ("nand\n", "mlc-nand\n"):
+                partial = True
     except (ValueError, UnicodeDecodeError, OverflowError):
         return "CONTRADICTORY"
     return "PARTIAL" if partial else "CONFIRMED"

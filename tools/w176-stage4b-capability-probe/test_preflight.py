@@ -2,11 +2,16 @@
 
 import gzip
 import hashlib
+import array
+import fcntl
 import os
 import shutil
 import struct
 import subprocess
 import tempfile
+import termios
+import threading
+import time
 import unittest
 from pathlib import Path
 
@@ -20,21 +25,29 @@ def synthetic_arm_libc(names, undefined=(), hidden=()):
     data[:7] = b"\x7fELF\x01\x01\x01"
     struct.pack_into("<H", data, 16, 3)
     struct.pack_into("<H", data, 18, 40)
+    struct.pack_into("<I", data, 20, 1)
+    struct.pack_into("<I", data, 28, 52)
     struct.pack_into("<I", data, 32, 768)
+    struct.pack_into("<HHH", data, 40, 52, 32, 2)
     struct.pack_into("<HH", data, 46, 40, 4)
-    strings = b"\0"
+    strings = b"\0libc.so.6\0"
     offsets = []
     for name in names:
         offsets.append(len(strings))
         strings += name.encode() + b"\0"
     data[256:256 + len(strings)] = strings
+    struct.pack_into("<IIIIIIII", data, 52, 1, 0, 0, 0, 1024, 1024, 5, 4096)
+    struct.pack_into("<IIIIIIII", data, 84, 2, 640, 640, 640, 48, 48, 4, 4)
+    for index, (tag, value) in enumerate(((5, 256), (6, 384), (10, len(strings)),
+                                          (11, 16), (14, 1), (0, 0))):
+        struct.pack_into("<II", data, 640 + index * 8, tag, value)
     for index, offset in enumerate(offsets, 1):
         struct.pack_into("<I", data, 384 + index * 16, offset)
         struct.pack_into("<BBH", data, 384 + index * 16 + 12,
                          18, 2 if names[index - 1] in hidden else 0,
                          0 if names[index - 1] in undefined else 3)
-    struct.pack_into("<IIIIII", data, 808, 0, 3, 0, 0, 256, len(strings))
-    struct.pack_into("<IIIIII", data, 848, 0, 11, 0, 0, 384, (len(names) + 1) * 16)
+    struct.pack_into("<IIIIII", data, 808, 0, 3, 0, 256, 256, len(strings))
+    struct.pack_into("<IIIIII", data, 848, 0, 11, 0, 384, 384, (len(names) + 1) * 16)
     struct.pack_into("<I", data, 848 + 24, 1)
     struct.pack_into("<I", data, 848 + 36, 16)
     struct.pack_into("<IIIIII", data, 888, 0, 1, 0, 0, 512, 16)
@@ -391,6 +404,43 @@ class PreflightFixture(unittest.TestCase):
         root = self.coherent_nvm(self.capture())
         self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"], "PARTIAL")
 
+    def test_second_review_malformed_mtd_type_cannot_confirm(self):
+        root = self.coherent_nvm(self.capture())
+        (root / "metadata/mtd12-type.txt").write_text("not-a-valid-mtd-type\n")
+        self.rehash(root)
+        self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"], "CONTRADICTORY")
+
+    def test_second_review_mtd_type_missing_or_other_family(self):
+        (self.sys / "class/mtd/mtd12/type").unlink()
+        self.assertEqual(analyze(self.coherent_nvm(self.capture()))["NVM_MOUNT_PRESENTATION"],
+                         "PARTIAL")
+        self.setUp()
+        (self.sys / "class/mtd/mtd12/type").write_text("nor\n")
+        self.assertEqual(analyze(self.coherent_nvm(self.capture()))["NVM_MOUNT_PRESENTATION"],
+                         "PARTIAL")
+
+    def test_second_review_collector_association_read_options(self):
+        bin_dir = self.base / "bin"
+        bin_dir.mkdir()
+        log = self.base / "dd.log"
+        wrapper = bin_dir / "dd"
+        wrapper.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\n'
+                           'exec /usr/bin/dd "$@"\n')
+        wrapper.chmod(0o755)
+        script = self.payload / "capability_probe.sh"
+        script.write_text(script.read_text().replace(
+            "PATH=/usr/sbin:/usr/bin:/sbin:/bin",
+            f"PATH={bin_dir}:/usr/sbin:/usr/bin:/sbin:/bin", 1))
+        self.capture()
+        calls = log.read_text().splitlines()
+        for source, count in ((self.proc / "self/mounts", 65537),
+                              (self.proc / "self/mountinfo", 131073),
+                              (self.proc / "mtd", 16385),
+                              (self.sys / "class/mtd/mtd12/type", 4097)):
+            with self.subTest(source=source):
+                self.assertTrue(any(f"if={source}" in call and "bs=1" in call
+                                    and f"count={count}" in call for call in calls))
+
     def test_review_undefined_libc_import_is_not_wrapper(self):
         self.put("lib/libc-2.30.so",
                  synthetic_arm_libc(("memfd_create",), undefined=("memfd_create",)))
@@ -406,6 +456,47 @@ class PreflightFixture(unittest.TestCase):
         self.put("lib/libc-2.30.so", synthetic_arm_libc(("fexecve",)))
         self.assertEqual(analyze(self.capture())["TARGET_LIBC_WRAPPER_MEMFD_CREATE"],
                          "NOT_OBSERVED")
+
+    def test_second_review_et_rel_is_not_runtime_libc(self):
+        image = bytearray(synthetic_arm_libc(("memfd_create",)))
+        struct.pack_into("<H", image, 16, 1)  # ET_REL
+        self.put("lib/libc-2.30.so", image)
+        self.assertNotEqual(analyze(self.capture())["TARGET_LIBC_WRAPPER_MEMFD_CREATE"],
+                            "OBSERVED")
+
+    def test_second_review_shared_image_structure_matrix(self):
+        wrappers = ("memfd_create", "execveat", "fexecve")
+        for name in wrappers:
+            with self.subTest(wrapper=name):
+                self.setUp()
+                self.put("lib/libc-2.30.so", synthetic_arm_libc((name,)))
+                self.assertEqual(analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                                 "OBSERVED")
+                for offset, fmt, value in ((16, "<H", 1), (16, "<H", 2),
+                                           (44, "<H", 0), (84, "<I", 0),
+                                           (640 + 4 * 8, "<I", 999)):
+                    self.setUp()
+                    image = bytearray(synthetic_arm_libc((name,)))
+                    struct.pack_into(fmt, image, offset, value)
+                    self.put("lib/libc-2.30.so", image)
+                    self.assertEqual(
+                        analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                        "UNKNOWN", (name, offset, value))
+
+    def test_second_review_all_wrapper_export_semantics(self):
+        for name in ("memfd_create", "execveat", "fexecve"):
+            with self.subTest(wrapper=name):
+                for label, kwargs in (("undefined", {"undefined": (name,)}),
+                                      ("hidden", {"hidden": (name,)})):
+                    self.setUp()
+                    self.put("lib/libc-2.30.so", synthetic_arm_libc((name,), **kwargs))
+                    self.assertEqual(
+                        analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                        "NOT_OBSERVED", (name, label))
+                self.setUp()
+                self.put("lib/libc-2.30.so", synthetic_arm_libc(()))
+                self.assertEqual(analyze(self.capture())[f"TARGET_LIBC_WRAPPER_{name.upper()}"],
+                                 "NOT_OBSERVED")
 
     def test_review_out_of_scope_libc_link_is_unknown(self):
         link = self.target / "lib/libc.so.6"
@@ -494,6 +585,71 @@ class FrozenMountGuardReproduction(unittest.TestCase):
     def run_guard(self):
         return subprocess.run(["/bin/sh", str(self.script), str(self.usb)],
                               cwd=self.usb, capture_output=True, text=True, timeout=5)
+
+    def stream_short_reads(self, target, chunks):
+        """Native FIFO sends one consumed short record per read call."""
+        target.unlink()
+        os.mkfifo(target)
+        errors = []
+
+        def writer():
+            try:
+                fd = os.open(target, os.O_WRONLY)
+                try:
+                    for chunk in chunks:
+                        try:
+                            os.write(fd, chunk.encode())
+                        except BrokenPipeError:
+                            break  # Frozen dd may stop after count short blocks.
+                        deadline = time.monotonic() + 2
+                        while True:
+                            queued = array.array("i", [0])
+                            fcntl.ioctl(fd, termios.FIONREAD, queued, True)
+                            if queued[0] == 0:
+                                break
+                            if time.monotonic() > deadline:
+                                raise TimeoutError("FIFO reader did not consume record")
+                            time.sleep(0.001)
+                        time.sleep(0.006)
+                finally:
+                    os.close(fd)
+            except Exception as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=writer, daemon=True)
+        thread.start()
+        result = self.run_guard()
+        thread.join(timeout=3)
+        self.assertFalse(thread.is_alive(), "FIFO writer stuck")
+        self.assertEqual(errors, [])
+        return result
+
+    def test_second_review_later_short_read_overmount_is_rejected(self):
+        chunks = [f"/dev/sda1 {self.usb} vfat rw 0 0\n"]
+        chunks += [f"tmpfs /unused{i} tmpfs rw 0 0\n" for i in range(16)]
+        chunks += [f"tmpfs {self.usb} tmpfs rw 0 0\n"]
+        self.assertNotEqual(self.stream_short_reads(self.table, chunks).returncode, 0)
+
+    def test_second_review_later_short_read_mountinfo_overmount_is_rejected(self):
+        chunks = [self.info.read_text()]
+        chunks += [f"{40+i} 20 0:99 / /unused{i} rw - tmpfs tmpfs rw\n"
+                   for i in range(32)]
+        chunks += [f"99 31 0:100 / {self.usb} rw - tmpfs tmpfs rw\n"]
+        self.assertNotEqual(self.stream_short_reads(self.info, chunks).returncode, 0)
+
+    def test_second_review_complete_short_read_streams_pass(self):
+        chunks = [f"/dev/sda1 {self.usb} vfat rw 0 0\n"]
+        chunks += [f"tmpfs /unused{i} tmpfs rw 0 0\n" for i in range(16)]
+        self.assertEqual(self.stream_short_reads(self.table, chunks).returncode, 0)
+        self.setUp()
+        chunks = [self.info.read_text()]
+        chunks += [f"{40+i} 20 0:99 / /unused{i} rw - tmpfs tmpfs rw\n"
+                   for i in range(32)]
+        self.assertEqual(self.stream_short_reads(self.info, chunks).returncode, 0)
+
+    def test_second_review_short_read_incomplete_final_record_rejected(self):
+        chunks = [f"/dev/sda1 {self.usb} vfat rw 0 0\n", "tmpfs /unterminated"]
+        self.assertNotEqual(self.stream_short_reads(self.table, chunks).returncode, 0)
 
     def test_review_stacked_mount_is_rejected(self):
         with self.table.open("a") as handle:

@@ -22,11 +22,13 @@ CANONICAL_ROOT=$(cd -P "$1" 2>/dev/null && pwd -P) || fail canonical_root
 case "$CANONICAL_ROOT" in /|*\\*|*[!A-Za-z0-9_./-]*) fail unsafe_mount_path ;; esac
 
 # Command substitution is in memory, not a target write. The terminal x
-# preserves trailing newlines; dd's exit status is checked separately.
-MOUNTS=$(dd if="$MOUNTS_FILE" bs=4096 count=17 2>/dev/null && printf x) || fail mounts_read
+# preserves trailing newlines; dd's exit status is checked separately. Read
+# one byte per counted input block: count must not mean "17 short reads".
+# LIMIT+1 bytes proves either EOF within the bound or an oversize view.
+MOUNTS=$(dd if="$MOUNTS_FILE" bs=1 count=65537 2>/dev/null && printf x) || fail mounts_read
 case "$MOUNTS" in *x) MOUNTS=${MOUNTS%x} ;; *) fail mounts_read ;; esac
 [ "${#MOUNTS}" -le 65536 ] || fail mounts_oversize
-INFO=$(dd if="$MOUNTINFO_FILE" bs=4096 count=33 2>/dev/null && printf x) || fail mountinfo_read
+INFO=$(dd if="$MOUNTINFO_FILE" bs=1 count=131073 2>/dev/null && printf x) || fail mountinfo_read
 case "$INFO" in *x) INFO=${INFO%x} ;; *) fail mountinfo_read ;; esac
 [ "${#INFO}" -le 131072 ] || fail mountinfo_oversize
 NEWLINE_X=$(printf '\nx')
