@@ -262,19 +262,53 @@ def linux_dev_numbers(value):
             (dev & 0xff) | (dev >> 12 & ~0xff))
 
 
+def mount_option_tokens(field):
+    """Parse an unnormalised /proc mount option field, or reject it."""
+    if not field or any(not char.isprintable() or char.isspace() for char in field):
+        return None
+    tokens = field.split(",")
+    if (any(not token or token.startswith("=") or token.endswith("=")
+            for token in tokens) or len(tokens) != len(set(tokens))):
+        return None
+    return tuple(tokens)
+
+
+def mount_view_fields(data):
+    """Preserve exact space-separated fields; never erase literal controls."""
+    try:
+        text = data.decode("utf-8", "strict")
+    except UnicodeDecodeError:
+        return None
+    if (not text.endswith("\n") or any(
+            char != "\n" and (not char.isprintable()
+                                or (char.isspace() and char != " ")) for char in text)):
+        return None
+    lines = text[:-1].split("\n")
+    if any(not line for line in lines):
+        return None
+    return [line.split(" ") for line in lines]
+
+
 def mount_presentation(files, objects):
     """Classify NVM association; a missing physical link cannot be confirmed."""
 
     def writable_options(field):
-        options = field.split(",")
-        return (all(options) and options.count("rw") == 1
-                and "ro" not in options)
+        options = mount_option_tokens(field)
+        return options is not None and options.count("rw") == 1 and "ro" not in options
 
     path = "/tmp/sp/media/flash/nvm"
-    mount = [r.split() for r in rows(files["mounts/proc-mounts.txt"], "mounts")
-             if len(r.split()) >= 2 and r.split()[1] == path]
-    info = [r.split() for r in rows(files["mounts/mountinfo.txt"], "mountinfo")
-            if len(r.split()) >= 5 and r.split()[4] == path]
+    mounts = mount_view_fields(files["mounts/proc-mounts.txt"])
+    infos = mount_view_fields(files["mounts/mountinfo.txt"])
+    if mounts is None or infos is None:
+        return "CONTRADICTORY"
+    if any(len(r) != 6 or not all(r) for r in mounts):
+        return "CONTRADICTORY"
+    for r in infos:
+        sep = r.index("-") if "-" in r else -1
+        if sep < 6 or len(r) != sep + 4 or not all(r):
+            return "CONTRADICTORY"
+    mount = [r for r in mounts if r[1] == path]
+    info = [r for r in infos if r[4] == path]
     if not mount and not info:
         return "UNKNOWN"
     if len(mount) != 1 or len(info) != 1:

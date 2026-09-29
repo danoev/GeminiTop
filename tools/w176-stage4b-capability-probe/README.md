@@ -51,7 +51,14 @@ supports the YAFFS2 association, an unfamiliar/malformed type contradicts it,
 and another recognized family leaves it `PARTIAL`. Each of the `/proc/mounts`
 options, mountinfo per-mount options and mountinfo superblock options must
 contain exactly one `rw` token and no `ro` token; malformed or conflicting
-options are `CONTRADICTORY`. Libc wrapper `OBSERVED`
+options are `CONTRADICTORY`. The analyser reads the raw captured view as
+UTF-8 lines separated only by LF and preserves literal spaces instead of
+normalising whitespace. Literal controls, DEL, non-printable text, malformed
+record fields, empty comma tokens, duplicate tokens and key/value tokens with
+an empty side are contradictory. Printable non-whitespace options such as
+`foo=bar`, visible paths and backslash escape text remain admissible. This is
+a conservative evidence grammar, not a claim that every vendor option was
+observed on the installed unit. Libc wrapper `OBSERVED`
 requires a defined, externally visible ELF32 ARM function in a provenance-bound
 ET_DYN loadable shared image with bounded PT_LOAD/PT_DYNAMIC, matching dynamic
 string/symbol tables and `libc.so.6` SONAME. The symbol entry (and its stated

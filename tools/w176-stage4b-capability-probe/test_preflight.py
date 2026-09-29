@@ -423,6 +423,92 @@ class PreflightFixture(unittest.TestCase):
                 self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"],
                                  "CONTRADICTORY")
 
+    def test_mount_option_control_review_reproductions(self):
+        views = (
+            ("mounts", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime",
+             lambda value: b"yaffs2 " + value),
+            ("mountinfo_mount", "mounts/mountinfo.txt", b"nvm rw,noatime -",
+             lambda value: b"nvm " + value + b" -"),
+            ("mountinfo_super", "mounts/mountinfo.txt",
+             b"- yaffs2 /dev/mtdblock12 rw,noatime",
+             lambda value: b"- yaffs2 /dev/mtdblock12 " + value),
+        )
+        for label, file, original, replacement in views:
+            for malformed in (b"rw,ro\x00", b"rw,\x00"):
+                with self.subTest(view=label, malformed=malformed):
+                    self.setUp()
+                    root = self.coherent_nvm(self.capture())
+                    path = root / file
+                    self.assertIn(original, path.read_bytes())
+                    path.write_bytes(path.read_bytes().replace(
+                        original, replacement(malformed)))
+                    self.rehash(root)
+                    self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"],
+                                     "CONTRADICTORY")
+
+    def test_mount_option_character_and_semantic_matrix(self):
+        views = (
+            ("mounts", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime",
+             lambda value: b"yaffs2 " + value),
+            ("mountinfo_mount", "mounts/mountinfo.txt", b"nvm rw,noatime -",
+             lambda value: b"nvm " + value + b" -"),
+            ("mountinfo_super", "mounts/mountinfo.txt",
+             b"- yaffs2 /dev/mtdblock12 rw,noatime",
+             lambda value: b"- yaffs2 /dev/mtdblock12 " + value),
+        )
+        malformed = (
+            b"rw,ro\x00", b"rw,\x00", b"rw,\x01", b"rw,\x1f", b"rw,\x7f",
+            b"rw,", b",rw", b"rw,,noatime", b"", b"rw,\tfoo", b"rw,\rfoo",
+            b"rw,rw", b"rw,ro,ro", b"rw,ro", b"rw,=bar", b"rw,foo=",
+            b"rw,noatime,noatime",
+        )
+        valid = (b"rw", b"rw,noatime", b"rw,relatime", b"rw,foo=bar",
+                 b"rw,path=/some/dir", b"rw,label=one\\040two",
+                 b"rw,key=foo=bar")
+        root = self.coherent_nvm(self.capture())
+        originals = {file: (root / file).read_bytes() for _, file, _, _ in views}
+        for label, file, original, replacement in views:
+            self.assertEqual(originals[file].count(original), 1)
+            path = root / file
+            for value in malformed:
+                with self.subTest(view=label, malformed=value):
+                    path.write_bytes(originals[file].replace(original, replacement(value)))
+                    self.rehash(root)
+                    self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"],
+                                     "CONTRADICTORY")
+            for value in valid:
+                with self.subTest(view=label, valid=value):
+                    path.write_bytes(originals[file].replace(original, replacement(value)))
+                    self.rehash(root)
+                    self.assertEqual(analyze(root)["NVM_MOUNT_PRESENTATION"],
+                                     "CONFIRMED")
+            path.write_bytes(originals[file])
+            self.rehash(root)
+
+    def test_mount_option_all_ascii_controls_fail_closed(self):
+        views = (
+            ("mounts", "mounts/proc-mounts.txt", b"yaffs2 rw,noatime",
+             lambda value: b"yaffs2 " + value),
+            ("mountinfo_mount", "mounts/mountinfo.txt", b"nvm rw,noatime -",
+             lambda value: b"nvm " + value + b" -"),
+            ("mountinfo_super", "mounts/mountinfo.txt",
+             b"- yaffs2 /dev/mtdblock12 rw,noatime",
+             lambda value: b"- yaffs2 /dev/mtdblock12 " + value),
+        )
+        root = self.coherent_nvm(self.capture())
+        originals = {file: (root / file).read_bytes() for _, file, _, _ in views}
+        for label, file, original, replacement in views:
+            path = root / file
+            for code in (*range(32), 127):
+                with self.subTest(view=label, code=code):
+                    value = b"rw," + bytes((code,))
+                    path.write_bytes(originals[file].replace(original, replacement(value)))
+                    self.rehash(root)
+                    self.assertNotEqual(analyze(root)["NVM_MOUNT_PRESENTATION"],
+                                        "CONFIRMED")
+            path.write_bytes(originals[file])
+            self.rehash(root)
+
     def test_final_review_absent_mount_evidence_is_not_confirmed(self):
         root = self.coherent_nvm(self.capture())
         mount = root / "mounts/proc-mounts.txt"
