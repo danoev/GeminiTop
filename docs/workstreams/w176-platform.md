@@ -95,12 +95,16 @@ maintained in `docs/platform/w176-patchability.md`.
   `docs/platform/w176-stage4a-physical-evidence.md`. The 02 workstream has
   already received the initial topology handoff and requested an offline trace
   of the installed v2.0.61 MCU library.
-- CONFIRMED host-only: the Stage-4B 5,556-byte proof daemon has SHA-256
-  `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`.
+- CONFIRMED host-only: the Stage-4B v2 5,556-byte proof daemon has SHA-256
+  `684afd86a067a6e175ed6b7d6c2a0281f1d44c67f62d86431589d1d7bd8c41b8`.
   Two clean pinned-toolchain builds match and the complete static ELF/ABI/
   interpreter/NEEDED/version/import/string gate passes. Disposable Linux
   install/removal/uninstall tests replace it with a host-native stand-in; the
-  ARM binary was not executed or emulated.
+  ARM binary was not executed or emulated. The v1 hash
+  `57fa924988d500224b3eb3ae74fb0408d8c8dd83cb7a702df560307be4307bd6`
+  remains historical. The v2 host matrix passed 88/88 required scenarios and
+  20/20 recovery-state decisions with zero skips/partials; this is not a
+  physical approval.
 - REFERENCE ONLY: the Benz v2.0.65 archive contains a Gemini container, a
   validated Linux 4.9.217 uImage, and SquashFS images. Separately, the original
   Audi reconnaissance capture showed a Gemini/ARMv7 runtime and stock

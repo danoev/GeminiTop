@@ -1,12 +1,12 @@
 # W176 Stage-4B persistent-residency candidate
 
-Status: historical host-only candidate, **NOT READY** after the 2026-09-28
-fresh safety audit in `docs/platform/w176-stage4b-fresh-safety-audit.md`.
-The earlier review prompt is superseded. Do not arm or physically run these
-scripts. No physical run or NVM write is authorised by this directory.
-The branch's subsequent v2 host-only hardening and unresolved gates are tracked in
-`docs/platform/w176-stage4b-remediation-status.md`; the older design summary
-below is not a claim of current approval.
+Status: v2 host matrix passed on 2026-09-29; a frozen implementation and
+fresh independent safety review are still separate gates. The historical
+2026-09-28 NO-GO audit in `docs/platform/w176-stage4b-fresh-safety-audit.md`
+remains part of the record, and its earlier review prompt is superseded. Do
+not arm or physically run these scripts. No physical run or NVM write is
+authorised by this directory. Current evidence and remaining target-only
+unknowns are tracked in `docs/platform/w176-stage4b-remediation-status.md`.
 
 ## Confirmed storage boundary
 
@@ -42,7 +42,7 @@ fallback paths.
 - accesses no CAN, MCU, serial, framebuffer, input, audio, Bluetooth, stock
   process, private RoadTop library, or network interface.
 
-The current **unfrozen host-only v2 build** is 5,556 bytes with SHA-256:
+The candidate **host-only v2 build** is 5,556 bytes with SHA-256:
 
 ```text
 684afd86a067a6e175ed6b7d6c2a0281f1d44c67f62d86431589d1d7bd8c41b8
@@ -90,7 +90,7 @@ a reboot may stop the proof process.
 ```sh
 tools/w176-stage4-residency/build.sh
 tools/w176-stage4-residency/verify.sh
-tools/w176-stage4-residency/test_linux.sh
+tools/w176-stage4-residency/run_matrix.sh
 ```
 
 The Linux suite replaces the ARM ELF with a host-native stand-in before any
@@ -98,7 +98,10 @@ execution. It exercises wrong-target/mount/storage cases, collisions, source
 and destination hash failures, interrupted copies, launch/heartbeat/PID
 failures, simulated USB removal, continued execution from the persistent path,
 clean TERM, exact uninstall, unexpected-file refusal, stock-file invariance,
-and absence of `nvm/bin` or `nvm/lib` shadowing.
+and absence of `nvm/bin` or `nvm/lib` shadowing. The matrix runner also checks
+88 required scenario rows, 20 recovery-state decisions, 27 late USB-result
+faults, and privileged disposable mount and block-metadata fixtures. It does
+not execute the target ARMHF binary.
 
 ## UI and boot-persistence findings
 

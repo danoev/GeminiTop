@@ -1,10 +1,10 @@
-# W176 Stage-4B remediation status (2026-09-28)
+# W176 Stage-4B remediation status (2026-09-29)
 
-**NOT READY FOR PHYSICAL REVIEW OR EXECUTION.** This branch contains
-host-side hardening of the historical NO-GO candidate
-`3a920c87cfca71cb845fc75c9c868f99d621ef59`. It is not a newly frozen
-payload. Do not create live arming markers or place this directory on the
-RoadTop USB. The Stage-4A branch and physical evidence are unchanged.
+**HOST MATRIX COMPLETE; INDEPENDENT REVIEW STILL REQUIRED.** This branch
+hardens the historical NO-GO candidate
+`3a920c87cfca71cb845fc75c9c868f99d621ef59`. Host success is neither
+physical GO nor permission to create live arming markers or place this
+directory on a RoadTop USB. The Stage-4A physical evidence is unchanged.
 
 ## Physical storage provenance and intended gate
 
@@ -127,24 +127,34 @@ It can prove same process identity, heartbeat advancement and finite FD
 detachment at verification. The physical-removal interval remains operator
 provenance.
 
-## Remaining blockers before a v2 review prompt or frozen candidate
+## Host gate result and physical boundary
 
 The v2 daemon itself records its kernel start ticks once at startup and emits
 the seven-key heartbeat `schema`, `process`, `build`, `pid`, `start_ticks`,
 `state`, `sequence`. The installer and verifier require a running heartbeat
 with PID/start matching the checked live process, and the uninstaller requires
 that same exact run before TERM plus its stopped heartbeat before deletion.
-The two host suites currently contain 61 integration and 14 synthetic
-process/FD cases; overlapping cases must not be counted as 75 distinct
-requirements. See `w176-stage4b-v2-matrix-status.md` for the numbered
-scenario ledger. The full 88-scenario failure matrix has **not** yet passed: outstanding
-coverage includes native FD/process races at exact action boundaries (although
-synthetic FD disappearance/replacement and TGID/zombie cases pass), PID
-reuse immediately before TERM, some late USB transaction failures,
-interruption/replay at every staging/deletion boundary, and privileged real
-nested/bind mounts. No target-side sysfs presentation has been checked for
-this revision. Accordingly there is still no frozen v2 implementation SHA,
-no v2 independent Work prompt, and physical Stage-4B remains **NO-GO**.
+The completed host run contains 120 residency integration cases, 18
+process/FD helper cases, 10 privileged real-mount cases, and 7 privileged
+block-node/sysfs metadata cases. Its independently mapped requirement result
+is `REQUIRED_MATRIX=88 PASS=88 FAIL=0 SKIP=0 PARTIAL=0`; the separate
+interruption-decision result is
+`RECOVERY_STATES=20 PASS=20 FAIL=0 SKIP=0 PARTIAL=0`. The 27 late USB
+transaction faults (nine each for install, verify, and uninstall) produced no
+false COMPLETE. The numbered rows, evidence classes, and overlapping tests
+are detailed in `w176-stage4b-v2-matrix-status.md` and the machine-readable
+ledgers under `tools/w176-stage4-residency/`. The historical Stage-1/2/3/4A,
+target-identification, firmware-inspector, FAT, and native Linux regressions
+also passed on this working tree; the one macOS Stage-4A timeout under
+concurrent load passed when rerun natively in Linux.
+
+The installed vendor kernel's exact MTD/sysfs and mountinfo presentation is
+still UNKNOWN. It is a deliberate first-write gate: any mismatch stops the
+installer before touching NVM. The physical USB-removal interval remains
+operator-provenance, not something software can reconstruct. No v2 target ARM
+execution or vehicle NVM write has occurred. A frozen implementation SHA and
+fresh independent review are the next gates; the host suite cannot itself
+authorise Stage-4B physical execution.
 
 No stock file, init, Launcher, NVM `bin`/`lib`, MTD payload, CAN/MCU, network,
 or boot-persistence path is intentionally touched. Host tests execute only

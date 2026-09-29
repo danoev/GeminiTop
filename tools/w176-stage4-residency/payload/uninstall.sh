@@ -82,6 +82,7 @@ validate_install_inventory || uninstall_stop "post_term_inventory_changed"
 validate_owned_heartbeat "$ORIGINAL_PID" "$ORIGINAL_START" || uninstall_stop "post_term_heartbeat_ownership_unknown"
 scan_no_proofd || uninstall_stop "pre_delete_process_coverage_unknown"
 validate_nvm_path "$DEST_MANIFEST" || uninstall_stop "manifest_mount_changed"
+validate_owned_heartbeat "$ORIGINAL_PID" "$ORIGINAL_START" || uninstall_stop "pre_delete_heartbeat_ownership_unknown"
 rm "$DEST_MANIFEST" || uninstall_stop "partial_uninstall_manifest_remove_failed"
 # From this point, any failure is PARTIAL_UNINSTALL / MANUAL_REVIEW_REQUIRED.
 validate_nvm_path "$DEST_BINARY" || uninstall_stop "partial_uninstall_binary_mount_changed"

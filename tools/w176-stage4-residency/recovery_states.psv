@@ -1,0 +1,21 @@
+state|boundary|marker|fresh_install|verify|uninstall|replay|auto_delete|manual_review
+A|Parent created then interrupted|interrupted_after_parent_creation_no_replay|NO|NO|NO|NO|NO|YES
+B|Staging directory created then interrupted|interrupted_after_staging_created|NO|NO|NO|NO|NO|YES
+C|Staged binary partially copied|copy_interruption|NO|NO|NO|NO|NO|YES
+D|Staged binary copy complete then interrupted|interrupted_after_staged_copy_complete|NO|NO|NO|NO|NO|YES
+E|Staged binary hash verified then interrupted|interrupted_after_staged_hash_verified|NO|NO|NO|NO|NO|YES
+F|Manifest written then interrupted|interrupted_after_manifest_written|NO|NO|NO|NO|NO|YES
+G|Final install directory committed then interrupted|interrupted_after_final_directory_commit|NO|NO|NO|NO|NO|YES
+H|Interrupted immediately before launch|interrupted_before_launch|NO|NO|NO|NO|NO|YES
+I|Process launched before identity proof|interrupted_after_launch_before_identity_preserves_run|NO|NO|NO|NO|NO|YES
+J|Interrupted before process identity proof|interrupted_after_launch_before_identity_preserves_run|NO|NO|NO|NO|NO|YES
+K|Identity proven then interrupted before USB result|interrupted_after_identity_before_usb_result_preserves_run|NO|NO|NO|NO|NO|YES
+L|Install result write failed after launch|install_result_direct_write_failure_preserves_run|NO|NO|NO|NO|NO|YES
+M|Verification interrupted with resident process live|interrupted_verify_preserves_resident_process|NO|NO|YES|NO|NO|YES
+N|Interrupted immediately after TERM|interrupted_immediately_after_term_preserves_nvm|NO|NO|NO|NO|NO|YES
+O|Process exited and identity changed during TERM wait|post_term_pid_reuse_during_wait_preserves_install|NO|NO|NO|NO|NO|YES
+P|Interrupted after process exit before first delete|interrupted_before_first_delete_preserves_install|NO|NO|NO|NO|NO|YES
+Q|Manifest deleted then interrupted|interrupted_after_manifest_delete_is_partial|NO|NO|NO|NO|NO|YES
+R|Manifest deleted and binary delete failed|partial_delete_stops_without_directory_cleanup|NO|NO|NO|NO|NO|YES
+S|Binary deleted then interrupted|interrupted_after_binary_delete_is_partial|NO|NO|NO|NO|NO|YES
+T|Directory removal failed after file deletion|partial_uninstall_directory_removal_failure|NO|NO|NO|NO|NO|YES

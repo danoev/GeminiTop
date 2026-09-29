@@ -153,4 +153,61 @@ chmod 755 "$ROOT/bin/readlink"
 if validate_process_detached_from_usb 123; then exit 1; fi
 pass process_changes_during_fd_bracket_rejected
 
-printf 'schema=1\nresult=PASS_PARTIAL_MATRIX\ntests=%s\n' "$COUNT"
+rm "$ROOT/bin/readlink" "$PROCESS_ROOT/switched"
+sed -i 's/ 43$/ 42/' "$PROCESS_ROOT/123/stat"
+cat > "$ROOT/bin/readlink" <<'EOF'
+#!/bin/sh
+case "$1" in
+    */fd/0)
+        if [ ! -e "$PROCESS_ROOT/switched" ]; then
+            /bin/ln -s /dev/null "$PROCESS_ROOT/123/fd/1"
+            : > "$PROCESS_ROOT/switched"
+        fi
+        ;;
+esac
+exec /usr/bin/readlink "$@"
+EOF
+chmod 755 "$ROOT/bin/readlink"
+if validate_process_detached_from_usb 123; then exit 1; fi
+rm "$ROOT/bin/readlink" "$PROCESS_ROOT/switched" "$PROCESS_ROOT/123/fd/1"
+pass fd_appears_during_scan_rejected
+
+rm "$PROCESS_ROOT/123/fd/0"
+rmdir "$PROCESS_ROOT/123/fd"
+if validate_process_detached_from_usb 123; then exit 1; fi
+mkdir "$PROCESS_ROOT/123/fd"
+ln -s /dev/null "$PROCESS_ROOT/123/fd/0"
+pass fd_directory_unavailable_rejected
+
+make_process 124 124 S 0 99
+mv "$PROCESS_ROOT/124" "$ROOT/pending-124"
+export ROOT
+cat > "$ROOT/bin/readlink" <<'EOF'
+#!/bin/sh
+case "$1" in
+    */123/exe)
+        if [ -d "$ROOT/pending-124" ]; then
+            /bin/mv "$ROOT/pending-124" "$PROCESS_ROOT/124"
+        fi
+        ;;
+esac
+exec /usr/bin/readlink "$@"
+EOF
+chmod 755 "$ROOT/bin/readlink"
+if scan_unique_proofd 123 42; then exit 1; fi
+rm "$ROOT/bin/readlink"
+rm -rf "$PROCESS_ROOT/124"
+pass duplicate_appears_mid_scan_rejected
+
+cat > "$ROOT/bin/readlink" <<'EOF'
+#!/bin/sh
+case "$1" in */123/exe) /bin/rm -rf "$PROCESS_ROOT/123" ;; esac
+exec /usr/bin/readlink "$@"
+EOF
+chmod 755 "$ROOT/bin/readlink"
+if scan_unique_proofd 123 42; then exit 1; fi
+rm "$ROOT/bin/readlink"
+make_process 123 123 S 0 42
+pass process_exits_mid_identity_bracket_rejected
+
+printf 'schema=1\nresult=PASS_HOST_CASES\ntests=%s\n' "$COUNT"

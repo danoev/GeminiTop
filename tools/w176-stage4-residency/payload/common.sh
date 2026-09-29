@@ -302,7 +302,7 @@ scan_unique_proofd() {
     EXPECTED_MATCH_PID=$1; EXPECTED_MATCH_START=$2
     DEST_ID=$(stat -c '%d|%i|%F|%s' "$DEST_BINARY" 2>/dev/null) || return 1
     case "$DEST_ID" in *'|regular file|'*) ;; *) return 1 ;; esac
-    SCAN_COUNT=0; MATCH_COUNT=0
+    SCAN_COUNT=0; MATCH_COUNT=0; SCAN_PID_LIST=
     for PROCESS_DIR in "$PROCESS_ROOT"/[0-9]*; do
         [ -d "$PROCESS_DIR" ] || continue
         SCAN_COUNT=$((SCAN_COUNT + 1))
@@ -310,6 +310,7 @@ scan_unique_proofd() {
         SCAN_PID=${PROCESS_DIR##*/}
         case "$SCAN_PID" in ''|*[!0-9]*) return 1 ;; esac
         [ "$SCAN_PID" -le "$MAX_PID" ] || return 1
+        SCAN_PID_LIST="$SCAN_PID_LIST $SCAN_PID"
         read_process_core "$SCAN_PID" || { [ ! -d "$PROCESS_DIR" ] && continue; return 1; }
         SCAN_CORE=$PROCESS_CORE_IDENTITY
         SCAN_START=$PROCESS_START
@@ -334,12 +335,23 @@ scan_unique_proofd() {
                 [ "$PROCESS_EXE_ONE" = "$DEST_BINARY" ] || return 1
         fi
     done
+    POST_PID_LIST=; POST_COUNT=0
+    for PROCESS_DIR in "$PROCESS_ROOT"/[0-9]*; do
+        [ -d "$PROCESS_DIR" ] || continue
+        POST_COUNT=$((POST_COUNT + 1))
+        [ "$POST_COUNT" -le "$MAX_PROCESSES" ] || return 1
+        SCAN_PID=${PROCESS_DIR##*/}
+        case "$SCAN_PID" in ''|*[!0-9]*) return 1 ;; esac
+        [ "$SCAN_PID" -le "$MAX_PID" ] || return 1
+        POST_PID_LIST="$POST_PID_LIST $SCAN_PID"
+    done
+    [ "$SCAN_PID_LIST" = "$POST_PID_LIST" ] || return 1
     [ "$MATCH_COUNT" -eq 1 ]
 }
 
 scan_no_proofd() {
     DEST_ID=$(stat -c '%d|%i|%F|%s' "$DEST_BINARY" 2>/dev/null) || return 1
-    SCAN_COUNT=0
+    SCAN_COUNT=0; SCAN_PID_LIST=
     for PROCESS_DIR in "$PROCESS_ROOT"/[0-9]*; do
         [ -d "$PROCESS_DIR" ] || continue
         SCAN_COUNT=$((SCAN_COUNT + 1))
@@ -347,6 +359,7 @@ scan_no_proofd() {
         SCAN_PID=${PROCESS_DIR##*/}
         case "$SCAN_PID" in ''|*[!0-9]*) return 1 ;; esac
         [ "$SCAN_PID" -le "$MAX_PID" ] || return 1
+        SCAN_PID_LIST="$SCAN_PID_LIST $SCAN_PID"
         read_process_core "$SCAN_PID" || { [ ! -d "$PROCESS_DIR" ] && continue; return 1; }
         SCAN_CORE=$PROCESS_CORE_IDENTITY
         SCAN_START=$PROCESS_START
@@ -364,6 +377,17 @@ scan_no_proofd() {
             [ "$PROCESS_EXE_ID" = "$SCAN_EXE_ID" ] || return 1
         [ "$SCAN_EXE_ID" != "$DEST_ID" ] || return 1
     done
+    POST_PID_LIST=; POST_COUNT=0
+    for PROCESS_DIR in "$PROCESS_ROOT"/[0-9]*; do
+        [ -d "$PROCESS_DIR" ] || continue
+        POST_COUNT=$((POST_COUNT + 1))
+        [ "$POST_COUNT" -le "$MAX_PROCESSES" ] || return 1
+        SCAN_PID=${PROCESS_DIR##*/}
+        case "$SCAN_PID" in ''|*[!0-9]*) return 1 ;; esac
+        [ "$SCAN_PID" -le "$MAX_PID" ] || return 1
+        POST_PID_LIST="$POST_PID_LIST $SCAN_PID"
+    done
+    [ "$SCAN_PID_LIST" = "$POST_PID_LIST" ] || return 1
     return 0
 }
 
@@ -600,7 +624,9 @@ finish_complete() {
     fi
     mv .HASHES.txt.tmp HASHES.txt || exit 1
     sha256sum -c HASHES.txt >/dev/null 2>&1 || exit 1
-    printf 'complete=1\n' > .COMPLETE.tmp && mv .COMPLETE.tmp COMPLETE || exit 1
+    printf 'complete=1\n' > .COMPLETE.tmp || exit 1
+    validate_hash .COMPLETE.tmp fce77eb2e288e98df88d768dd0ef6a68267a37357fb1f7c573dad47a092c8ed5 11 || exit 1
+    mv .COMPLETE.tmp COMPLETE || exit 1
     is_regular_nonsymlink COMPLETE || exit 1
     printf '%s\n' "w176-stage4b: complete: $OUT_DISPLAY"
 }

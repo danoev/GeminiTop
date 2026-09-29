@@ -1,0 +1,89 @@
+id|requirement|marker|evidence|test_script|expected
+M01|Exact valid NVM source and mount|clean_install_remove_verify_term_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M02|Wrong mount source rejected|wrong_nvm_source|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M03|Non-block NVM node rejected|real_block_special_regular_node_rejected|DISPOSABLE-MOUNT|test_linux_mtd_binding.sh|PASS
+M04|Block major minor mismatch rejected|real_block_special_wrong_minor_rejected|DISPOSABLE-MOUNT|test_linux_mtd_binding.sh|PASS
+M05|Wrong sysfs block identity rejected|real_block_special_wrong_sysfs_object_rejected|DISPOSABLE-MOUNT|test_linux_mtd_binding.sh|PASS
+M06|Wrong MTD partition number rejected|wrong_mtd_number|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M07|Wrong NVM partition name rejected|real_block_special_wrong_mtd_name_rejected|DISPOSABLE-MOUNT|test_linux_mtd_binding.sh|PASS
+M08|Wrong NVM partition size rejected|real_block_special_wrong_mtd_size_rejected|DISPOSABLE-MOUNT|test_linux_mtd_binding.sh|PASS
+M09|Nested tmpfs covering mount rejected|real_mount_nested_tmpfs_rw_rejected|DISPOSABLE-MOUNT|test_linux_real_mounts.sh|PASS
+M10|Nested read-only ext4 mount rejected|real_mount_nested_ext4_ro_rejected|DISPOSABLE-MOUNT|test_linux_real_mounts.sh|PASS
+M11|Nested same-fstype mount rejected|real_mount_nested_same_fstype_rejected|DISPOSABLE-MOUNT|test_linux_real_mounts.sh|PASS
+M12|Same-device bind mount rejected|real_mount_same_device_bind_rejected|DISPOSABLE-MOUNT|test_linux_real_mounts.sh|PASS
+M13|SHA correct output with nonzero exit rejected|hash_valid_output_nonzero_exit|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M14|SHA empty output with nonzero exit rejected|sha_empty_nonzero_exit|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M15|Kernel producer correct output with nonzero exit rejected|kernel_valid_output_nonzero_exit|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M16|DF correct output with nonzero exit rejected|df_valid_output_nonzero_exit|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M17|Malformed DF rejected|malformed_df|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M18|Ambiguous DF rejected|ambiguous_df|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M19|Source symlink rejected|source_symlink|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M20|Source FIFO rejected|source_fifo|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M21|Source hash mismatch rejected|source_hash_mismatch|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M22|Source mutation during copy rejected|source_changes_during_copy|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M23|Short copy rejected|short_copy|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M24|Staged copy hash mismatch rejected|destination_hash_mismatch|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M25|Committed destination hash mismatch rejected|committed_destination_hash_mismatch|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M26|Manifest write failure rejected|manifest_write_failure|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M27|Final directory rename failure rejected|final_rename_failure|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M28|Normal live proof process accepted|clean_install_remove_verify_term_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M29|Wrong TGID rejected|wrong_tgid_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M30|Zombie not accepted as live execution|zombie_not_live_execution|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M31|Unknown process state rejected|unknown_state_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M32|PID reuse immediately before TERM does not signal|immediate_preterm_reused_pid_never_signalled|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M33|Process exit during identity bracket rejected|process_exits_mid_identity_bracket_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M34|Duplicate installed executable rejected|duplicate_executable_prevents_term|REAL-LINUX|test_linux_residency.sh|PASS
+M35|Live uninspectable process fails closed|live_uninspectable_process_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M36|Changed executable identity rejected|changed_executable_identity_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M37|Changed kernel start ticks rejected|changed_start_ticks_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M38|No USB FD accepted|clean_install_remove_verify_term_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M39|Explicit USB FD rejected|explicit_usb_fd_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M40|FD disappears during scan rejected|fd_disappears_during_scan_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M41|FD readlink failure rejected|fd_readlink_failure_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M42|FD target changes rejected|fd_target_replaced_during_scan_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M43|Process changes during FD bracket rejected|process_changes_during_fd_bracket_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M44|FD beyond reviewed bound rejected|fd_over_reviewed_bound_rejected|SYNTHETIC-DETERMINISTIC|test_linux_process_helpers.sh|PASS
+M45|Exact heartbeat accepted|clean_install_remove_verify_term_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M46|Wrong heartbeat PID rejected|heartbeat_pid_mismatch_blocks_term|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M47|Wrong heartbeat start ticks rejected|heartbeat_wrong_start_prevents_term|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M48|Stale heartbeat sequence rejected|stale_heartbeat_prevents_verify|REAL-LINUX|test_linux_residency.sh|PASS
+M49|Malformed heartbeat rejected|malformed_heartbeat_blocks_term|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M50|Duplicate heartbeat key rejected|heartbeat_duplicate_key_prevents_term|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M51|Unexpected heartbeat key rejected|heartbeat_unexpected_key_prevents_term|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M52|Wrong heartbeat schema rejected|heartbeat_wrong_schema_blocks_term|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M53|Different process incarnation heartbeat rejected|heartbeat_wrong_start_prevents_term|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M54|USB result write failure after launch preserves NVM|install_result_direct_write_failure_preserves_run|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M55|Late result hash failure prevents COMPLETE|late_usb_result_hash_failure_preserves_nvm_and_run|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M56|Final STATUS commit failure prevents COMPLETE|late_status_commit_failure_preserves_run|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M57|COMPLETE commit failure prevents COMPLETE|late_complete_commit_failure_preserves_run|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M58|Uncertain launch leaves persistent install|launch_failure|REAL-LINUX|test_linux_residency.sh|PASS
+M59|Same run survives simulated USB removal|clean_install_remove_verify_term_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M60|Restarted or reused process fails verify|verify_reused_pid_rejected_without_relaunch|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M61|Heartbeat advances across verification|clean_install_remove_verify_term_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M62|Heartbeat not advancing fails verify|stale_heartbeat_prevents_verify|REAL-LINUX|test_linux_residency.sh|PASS
+M63|Duplicate execution fails verify|duplicate_executable_prevents_verify|REAL-LINUX|test_linux_residency.sh|PASS
+M64|Verify never relaunches process|verify_does_not_relaunch_dead_process|REAL-LINUX|test_linux_residency.sh|PASS
+M65|USB FD after reinsertion fails verify|native_verify_usb_fd_after_reinsertion_rejected|REAL-LINUX|test_linux_residency.sh|PASS
+M66|Normal TERM exit permits exact uninstall|clean_install_remove_verify_term_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M67|Ignored TERM leaves install intact|ignored_term_retains_persistent_install|REAL-LINUX|test_linux_residency.sh|PASS
+M68|PID reused at final pre-TERM gate not signalled|immediate_preterm_reused_pid_never_signalled|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M69|Zombie at final pre-TERM gate not signalled|immediate_preterm_zombie_never_signalled|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M70|Executable change at final pre-TERM gate not signalled|immediate_preterm_exe_change_never_signalled|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M71|Duplicate before TERM blocks uninstall|duplicate_executable_prevents_term|REAL-LINUX|test_linux_residency.sh|PASS
+M72|Live uninspectable leader before TERM blocks uninstall|uninstall_live_uninspectable_leader_blocks_term|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M73|Unexpected persistent file blocks uninstall|unexpected_extra_blocks_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M74|Unexpected persistent directory blocks uninstall|unexpected_directory_prevents_term|REAL-LINUX|test_linux_residency.sh|PASS
+M75|Persistent symlink blocks uninstall|symlink_in_install_blocks_uninstall|REAL-LINUX|test_linux_residency.sh|PASS
+M76|Manifest mismatch blocks uninstall|manifest_mismatch_prevents_term|REAL-LINUX|test_linux_residency.sh|PASS
+M77|Binary mismatch blocks uninstall|binary_mismatch_prevents_term|REAL-LINUX|test_linux_residency.sh|PASS
+M78|Heartbeat replacement before deletion blocks uninstall|pre_delete_heartbeat_replacement_blocks_delete|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M79|First delete followed by binary failure is partial|partial_delete_stops_without_directory_cleanup|REAL-LINUX|test_linux_residency.sh|PASS
+M80|Final directory removal failure is partial|partial_uninstall_directory_removal_failure|REAL-LINUX|test_linux_residency.sh|PASS
+M81|Interruption after parent creation prevents replay|interrupted_after_parent_creation_no_replay|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M82|Interruption during copy leaves staging|copy_interruption|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M83|Interruption after staged hash prevents replay|interrupted_after_staged_hash_verified|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M84|Interruption after manifest prevents replay|interrupted_after_manifest_committed|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M85|Interruption after final commit before launch preserves NVM|interrupted_before_launch|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M86|Interruption after launch before USB result preserves run|interrupted_after_identity_before_usb_result_preserves_run|REAL-LINUX|test_linux_residency.sh|PASS
+M87|Interruption after TERM preserves files pending review|interrupted_immediately_after_term_preserves_nvm|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
+M88|Interruption after manifest deletion is partial and not replayed|interrupted_after_manifest_delete_is_partial|SYNTHETIC-DETERMINISTIC|test_linux_residency.sh|PASS
