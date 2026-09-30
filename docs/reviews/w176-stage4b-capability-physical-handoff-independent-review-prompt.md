@@ -1,4 +1,4 @@
-# Fresh independent Work review — W176 Stage-4B capability physical handoff
+# Fresh independent Work re-review — W176 Stage-4B capability physical handoff
 
 Perform a **fresh, read-only, independent physical-handoff safety review** of
 one proposed **metadata-only** capability capture on the installed W176
@@ -14,8 +14,14 @@ Dedicated branch: `codex/w176-stage4b-capability-preflight`
 Exact frozen implementation previously found READY FOR FRESH PHYSICAL REVIEW
 in an independent **host** review:
 `465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed`.
-That result is **not physical GO**. Review this frozen implementation, not
-the moving branch tip. The later handoff commit changes documentation only.
+The previous **physical-handoff procedure** review returned NO-GO with two
+HIGH findings (host destination resolving to USB; recursive cleanup crossing
+a nested mount) and one MEDIUM (VALID COMPLETE lacking return provenance).
+The procedure-only remediation commit is
+`29c303632419817db062c70f9360a725602a61d5`.
+The host-review result is **not physical GO**. Review the exact frozen
+implementation and the remediated handoff procedure, not the moving branch
+tip. These later commits change documentation only.
 The production `feature/w176-stage4b` branch is separate and remains NO-GO.
 
 Read `AGENTS.md`,
@@ -42,16 +48,43 @@ There must be no tracked or prepared live
 `.stage4b-capability.lock` directory is retained. Independently check that
 an unarmed insertion can create the lock and must therefore be prohibited.
 
-Review the complete Mac procedure line by line for wrong-device, symlink,
-stale-result, partial-copy, failed-hash, permissions, shell-state, cleanup,
-host-backup and evidence-contamination hazards. Challenge the `diskutil`
-identity fields, the exact-name cleanup with full backup and acknowledgement,
-the direct frozen-blob extraction, no-clobber behavior, byte-for-byte and
-SHA-256 checks, the final unarmed inventory, and all stop conditions. Do not
-assume that the operator can safely reuse an old USB if its contents are
-ambiguous; a dedicated clean USB is preferred. Evaluate whether the procedure
-could delete unrelated data, silently prepare the wrong device, or accidentally
-create a live marker.
+First independently reproduce or challenge the prior findings against
+documentation commit `8209812124b46015ff5663ca29ff2f9993186b16`:
+an ancestor symlink could make a lexical host path resolve onto USB; the
+optional recursive result deletion could cross a nested mount; NO or UNKNOWN
+one-attempt statements were informational; and returned payload files were
+not rehashed against frozen Git blobs. No actual nested mount or real USB is
+needed to review the old deletion risk.
+
+Review the revised Mac procedure line by line. It must require a **dedicated
+clean USB** and provide no reuse, backup/cleanup, recursive deletion, or
+retry path for removable media. Check the exact accepted macOS housekeeping
+names/types; any old payload, result, lock, live marker or unexplained object
+must STOP without deletion. Challenge the direct frozen-blob extraction,
+noclobber behavior, byte/size/hash checks, final unarmed inventory, and
+partial-preparation stop rule. Verify the Mac code cannot accidentally create
+a live marker during preparation.
+
+Independently challenge the reusable host-storage guard. It canonicalises
+the entire existing parent, including symlinked ancestors; identifies the
+effective filesystem with `df -P` and cross-checks `diskutil info -plist`;
+requires an internal, nonremovable, writable backing volume; and rejects
+USB/repository/cloud locations and a host destination on the same
+filesystem/device as USB. Check the APFS System/Data firmlink case, for which
+`st_dev` alone can be ambiguous. Check whether a path or mount swap between
+validation and copying remains possible and whether fail-closed rechecks
+are sufficient for one controlled attempt. No `/Users` pathname by itself
+establishes internal storage or absence of cloud synchronisation.
+
+Check the pre-arm host-only manifest: frozen SHA, preparation UTC time,
+dedicated-clean root state, four exact filenames and Git-derived hashes/sizes,
+and USB identity. The required `VolumeUUID` is treated as a persistent
+volume identifier only when available; a missing value must STOP. The
+comparison also uses label, filesystem, capacity, USB bus and removable
+flags. `DeviceIdentifier`, `DeviceNode`, mountpoint and `st_dev` are
+session-local and must not be required to match across eject/reinsert.
+Challenge whether these fields are sufficient and accurately described as
+corroboration, **not** physical-device authentication.
 
 Independently trace target action order in the frozen scripts. The proposed
 order is stock USB autorun, entrypoint and effective removable-FAT mount
@@ -73,13 +106,18 @@ as a technical prerequisite, and safety/battery concerns must override an
 attempt.
 
 Review the immediate **read-only** return-to-Mac inspection of marker, lock,
-result directories, STATUS, COMPLETE, ERRORS and OPTIONAL. Then review the
-timestamped **whole-USB-root** host preservation, source/copy comparison,
-copied transaction hashes, and provenance statement recording the frozen
-SHA, time, volume label, one-shot state and operator's one-attempt account.
-The original returned USB must remain unchanged by the prescribed commands;
-distinguish this from unpreventable macOS housekeeping and do not claim that
-a host copy proves original FAT inode metadata.
+result directories, STATUS, COMPLETE, ERRORS and OPTIONAL. Before any copy,
+the returned stable USB identity must be compared programmatically against
+the pre-arm record. Then challenge the revalidated canonical internal host
+destination, its separate effective filesystem, the timestamped
+**whole-USB-root** copy with `rsync -a -x`, the bounded no-symlink/no-nested-
+mount source/copy comparer, and copied transaction hashes. Independently
+verify all four returned and copied payload files against the exact frozen
+Git blobs as regular non-symlink objects, including exact bytes, size and
+SHA-256. Reports must be outside the pristine copied transaction. The
+original USB must remain a read-only source from the procedure's point of
+view; macOS housekeeping may still occur, and a host copy does not prove
+original FAT inode metadata.
 
 The frozen host analyser is
 `tools/w176-stage4b-capability-probe/analyze.py` at the frozen SHA, 28,530
@@ -87,11 +125,27 @@ bytes, SHA-256
 `4f8a0b939445636630e707d3fe97f51a0570d5bda317cef41d7c3bf800890566`.
 Check that it is extracted and verified from Git, run only on the preserved
 host copy, and sends stdout, stderr, exit status and JSON outside the copied
-transaction. Challenge classification precedence: unexpected/ambiguous
-conditions require MANUAL REVIEW; ordinary incomplete or rejected transaction
-is INCOMPLETE; VALID COMPLETE requires coherent one-shot state, zero mandatory
-failures, a regular COMPLETE, empty ERRORS, copy agreement and analyser
+transaction. Challenge classification precedence and the final executable
+host gate: unavailable/mismatched identity, unsafe destination, payload
+mismatch, operator answer other than exact YES, unexpected objects, multiple
+results, ambiguous lock/marker, copy mismatch or analyser discrepancy must
+be MANUAL REVIEW REQUIRED. Only with sound provenance may a known incomplete
+transaction or frozen analyser structural/checksum rejection be INCOMPLETE.
+VALID COMPLETE requires every provenance gate, exactly one expected result,
+consumed marker, retained real lock, STATUS complete with zero mandatory
+failures, regular COMPLETE, empty ERRORS, copy agreement, and frozen analyser
 acceptance. No category authorises an automatic physical retry.
+
+Re-run or challenge the disposable host fixtures: ancestor symlink to USB
+STOP; external or same-device host STOP; separate internal host PASS; dirty
+or nested old result STOP with no deletion; stable identity match PASS and
+mismatch MANUAL; returned frozen payload match PASS and modified/symlinked
+payload MANUAL; operator YES eligible, NO/UNKNOWN MANUAL; missing COMPLETE
+INCOMPLETE. Check all documented Bash blocks with `bash -n`, Python block
+syntax, and the absence of any `rm -R` or `rm -rf` against removable media.
+The implementing session also reports a read-only test of the effective
+host-volume lookup selecting `/System/Volumes/Data` for `/Users/daniel`.
+These fixtures and host checks are not physical RoadTop evidence.
 
 If a valid metadata capture is eventually returned, it may inform kernel,
 mount, MTD, libc/loader and static feature-support questions. It cannot prove
