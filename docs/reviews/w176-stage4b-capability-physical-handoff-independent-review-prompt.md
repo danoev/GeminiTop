@@ -14,11 +14,17 @@ Dedicated branch: `codex/w176-stage4b-capability-preflight`
 Exact frozen implementation previously found READY FOR FRESH PHYSICAL REVIEW
 in an independent **host** review:
 `465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed`.
-The previous **physical-handoff procedure** review returned NO-GO with two
-HIGH findings (host destination resolving to USB; recursive cleanup crossing
-a nested mount) and one MEDIUM (VALID COMPLETE lacking return provenance).
-The procedure-only remediation commit is
+An earlier physical-handoff review returned NO-GO with two HIGH findings
+(host destination resolving to USB; recursive cleanup crossing a nested
+mount) and one MEDIUM (VALID COMPLETE lacking return provenance). The
+procedure-only remediation was
 `29c303632419817db062c70f9360a725602a61d5`.
+The latest independent review accepted those closures but returned **NO-GO**
+for one new HIGH: final arming checked the four scripts and known one-shot
+names, yet could allow an extra root object such as `UNEXPECTED.BIN`. It also
+reported one LOW: host readability/executability was not rechecked just before
+arming. Review the new documentation-only root-inventory remediation commit:
+`8136c566f69a7480204489a6f1fddb7d773853e7`.
 The host-review result is **not physical GO**. Review the exact frozen
 implementation and the remediated handoff procedure, not the moving branch
 tip. These later commits change documentation only.
@@ -83,6 +89,42 @@ volume identifier only when available; a missing value must STOP. The
 comparison also uses label, filesystem, capacity, USB bus and removable
 flags. `DeviceIdentifier`, `DeviceNode`, mountpoint and `st_dev` are
 session-local and must not be required to match across eject/reinsert.
+
+First reproduce the latest HIGH against the earlier procedure commit
+`29c303632419817db062c70f9360a725602a61d5`: after preparation, add
+`UNEXPECTED.BIN` to a **disposable host fixture**. Confirm the four frozen
+scripts still pass `frozen_provenance_gate` and the former arming name-only
+check does not reject the extra object. Do not run the old marker-creation
+command. Then inspect the new `final_root_inventory_gate` independently.
+It must load the exact pre-arm record from validated internal host storage,
+require the frozen SHA, schema, stable identity, four payload names and
+well-formed `clean_usb_initial_root` mapping, and require the current USB
+root's complete `lstat` name/type mapping to equal precisely:
+
+`clean_usb_initial_root` + four frozen regular-file scripts.
+
+The gate must not invent or extend a housekeeping allowlist after
+preparation. A new `.Spotlight-*`, `.Trashes`, `._foo`, arbitrary file,
+directory, symlink or special object must STOP, as must a missing/renamed
+payload or a name/type change of prepared housekeeping. Housekeeping
+contents are not claimed immutable; the asserted boundary is root names and
+types. Confirm the independent frozen-byte/size/SHA gate still runs before
+the root gate and cannot be replaced by it.
+
+Review the exact future arming order: revalidate host destination and USB
+identity; compare stable identity to pre-arm; verify frozen payload; verify
+exact unarmed root; check all four scripts readable on the current Mac mount
+and `gemn_auto.sh` executable; independently reject marker/lock/result
+state; recheck current host/media identity; only then create the live marker
+with noclobber. Marker creation must be the first intended USB mutation of
+the arming phase. Confirm the post-marker check requires a regular
+non-symlink marker and the exact prepared baseline plus scripts plus marker,
+with no lock/result/extra object. A post-marker failure means STOP, MANUAL
+REVIEW and **NO INSERTION**—never automatic marker removal or repair.
+Distinguish host-side read/execute presentation from the still-unknown
+effective policy of this future RoadTop FAT mount. The checks address
+non-malicious operator/preparation drift, not malicious privileged concurrent
+mutation or hardware substitution after validation.
 Challenge whether these fields are sufficient and accurately described as
 corroboration, **not** physical-device authentication.
 
@@ -146,6 +188,16 @@ syntax, and the absence of any `rm -R` or `rm -rf` against removable media.
 The implementing session also reports a read-only test of the effective
 host-volume lookup selecting `/System/Volumes/Data` for `/Users/daniel`.
 These fixtures and host checks are not physical RoadTop evidence.
+
+Run or challenge the new committed-in-document A–P disposable fixture harness.
+It must never touch a real USB or target. In particular verify: exact root
+PASS; extra file/directory/symlink/FIFO/new housekeeping STOP; missing or
+type-changed prepared housekeeping STOP; missing/symlinked payload STOP;
+changed payload bytes STOP through frozen provenance even when root names
+still match; unreadable or non-executable host fixture STOP; exact unarmed
+root eligible; exact armed root PASS; late extra object STOP/MANUAL. Check
+documented Bash and Python syntax again and confirm no removable-media
+recursive deletion path has reappeared.
 
 If a valid metadata capture is eventually returned, it may inform kernel,
 mount, MTD, libc/loader and static feature-support questions. It cannot prove
