@@ -7,7 +7,12 @@ architecture research. The last independently reviewed production candidate
 remains 052332973c1e28566395483b52ba11eda72db772.
 
 Stage-4B remains NO-GO. This candidate invokes no memfd, sealing, or exec
-feature syscall, executes no new ARM code, and has not run on the vehicle.
+feature syscall and executes no new ARM code. One metadata-only physical
+attempt used the earlier frozen collector, but it ended INCOMPLETE; see the
+[sanitised attempt record](w176-stage4b-capability-physical-attempt.md).
+Its partial outputs are not a validated capability capture. The corrected
+collector is frozen at `f02c89e91eb2d5f962ce485669bba91e89eab37b`
+for a new independent review; it has not run on the vehicle.
 
 ## Exact sources and evidential limits
 
@@ -27,7 +32,12 @@ the effective root mount to be read-only SquashFS, with no covering nested
 mount and matching filesystem device identity. Unsafe provenance means no
 copy. Exact regular-file sources are checked before and after a retained,
 bounded descriptor read. Proc/sysfs pseudo-files use finite read counts
-because their reported size can be zero. The captured mount/MTD association
+because their reported size can be zero. The corrected collector uses
+structural non-symlink regular-file checks rather than human-readable `stat`
+file-type prose, and compares opened virtual-file descriptors with the source
+path's device/inode/mode before and after reading. For `/proc/self/mounts` and
+`/proc/self/mountinfo`, external `stat` comparisons use the collector shell's
+fixed PID so `/proc/self` cannot refer to a different process. The captured mount/MTD association
 views and mtd12 attributes use byte-granularity LIMIT+1 reads, so their
 bounded copy is complete or marked oversized rather than accepting a
 short-read prefix. Other pseudo-files retain their separately bounded reads;
@@ -160,7 +170,9 @@ accepts all required seals, rejects later writes, and executes the protected
 ARMHF dynamic ELF by descriptor. The smallest remaining runtime capability
 question is whether that complete seal-verify-execute sequence succeeds on
 the installed kernel/loader. A separately reviewed and explicitly authorised
-minimal native experiment would be needed later; none is built here.
+minimal native experiment would be needed later; none is built here. A
+[documentation-only draft](w176-stage4b-sealed-runtime-design.md) identifies
+that later experiment's boundaries without implementing or authorising it.
 
 ## Host verification
 
@@ -197,4 +209,4 @@ kallsyms temporaries + 14,400 other temporary allowances. The 3072-KiB final acc
 is not a peak-write bound, and FAT write amplification is not claimed.
 
 No stock file, internal NVM, MTD, service, CAN/MCU/UART, or network state was
-changed. No physical test is approved by this report.
+changed by this remediation. No physical retest is approved by this report.

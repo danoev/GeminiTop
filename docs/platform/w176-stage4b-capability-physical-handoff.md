@@ -2,13 +2,16 @@
 
 This is an operator and independent-review handoff for one possible future
 metadata-only capture on the installed W176 RoadTop. It is **not physical GO**.
-No USB was prepared or armed, and no vehicle action was performed while writing
-this document. Use it only after a separate physical-handoff safety review
+No USB was prepared or armed, and no vehicle action was performed during this
+remediation. Use it only after a separate physical-handoff safety review
 returns GO and the owner separately authorises one controlled attempt.
 Stage-4B persistent residency remains NO-GO.
 
-The independently host-reviewed implementation is frozen at
-465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed. Every future extraction below
+The earlier `465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed` physical attempt
+ended INCOMPLETE; see the [sanitised attempt record](w176-stage4b-capability-physical-attempt.md).
+Do not reuse its consumed marker, retained lock or old payload. The corrected
+**candidate, pending fresh independent review**, is frozen at
+f02c89e91eb2d5f962ce485669bba91e89eab37b. Every future extraction below
 uses Git objects at that SHA, never the current checkout. The source of the
 installed stock autorun chain is recorded in
 [Stage-2 physical evidence](w176-stage2-evidence.md); the operator's prior
@@ -31,7 +34,7 @@ mode is still 100755. FAT mount policy may determine effective permissions.
 | gemn_auto.sh | gemn_auto.sh | 602 | 3cbe48aed6188606d701c774b19251e659ae31dae8942359496cdb78f1235c44 | Yes for stock autorun invocation; preserve 0755 |
 | mount_guard.sh | mount_guard.sh | 5,536 | 7401bc34c9e85b0091f5d994169949e5af915cec87034c0bd97e236f83e4ad5c | Invoked by /bin/sh; preserve reviewed 0755 |
 | root_mount_guard.sh | root_mount_guard.sh | 1,632 | acfebdbf0dbdbe5135d453a3e41b8829c49fa8510117b35c960bebd9fe154d06 | Invoked by /bin/sh; preserve reviewed 0755 |
-| capability_probe.sh | capability_probe.sh | 16,907 | 5281d55b407c33ccb712fd83c358fee6386f4dfc235fdd4ea091dfe782bc8de6 | Invoked by /bin/sh; preserve reviewed 0755 |
+| capability_probe.sh | capability_probe.sh | 17,806 | ed8c94eba43dcfe3d8248ac9b9df1738615329fc14cb846a29ed85bede530b5a | Invoked by /bin/sh; preserve reviewed 0755 |
 
 The tracked inert example is
 tools/w176-stage4b-capability-probe/payload/ARM_STAGE4B_CAPABILITY_PREFLIGHT.example
@@ -222,7 +225,7 @@ anything. Record the printed PREARM_DIR for the return phase.
 ~~~bash
 set -euo pipefail
 REPO='/Users/daniel/Documents/GeminiTop'
-FROZEN='465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed'
+FROZEN='f02c89e91eb2d5f962ce485669bba91e89eab37b'
 USB_VOLUME='/Volumes/REPLACE_WITH_OBSERVED_USB_LABEL'
 EVIDENCE_PARENT='/Users/daniel/REPLACE_WITH_PRIVATE_LOCAL_PARENT'
 test "$(git -C "$REPO" rev-parse --verify "$FROZEN^{commit}")" = "$FROZEN"
@@ -493,7 +496,7 @@ identifier alone does not negate matching stable identity after reinsertion.
 # DO NOT RUN UNTIL SEPARATELY AUTHORISED
 set -euo pipefail
 REPO='/Users/daniel/Documents/GeminiTop'
-FROZEN='465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed'
+FROZEN='f02c89e91eb2d5f962ce485669bba91e89eab37b'
 USB_VOLUME='/Volumes/REPLACE_WITH_REINSERTED_USB_LABEL'
 EVIDENCE_PARENT='/Users/daniel/REPLACE_WITH_PRIVATE_LOCAL_PARENT'
 PREARM_DIR='/Users/daniel/REPLACE_WITH_RECORDED_PREARM_DIR'
@@ -638,7 +641,7 @@ omission instead of silently accepting an incomplete copy.
 ~~~bash
 set -euo pipefail
 REPO='/Users/daniel/Documents/GeminiTop'
-FROZEN='465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed'
+FROZEN='f02c89e91eb2d5f962ce485669bba91e89eab37b'
 USB_VOLUME='/Volumes/REPLACE_WITH_RETURNED_USB_LABEL'
 EVIDENCE_PARENT='/Users/daniel/REPLACE_WITH_PRIVATE_LOCAL_PARENT'
 PREARM_DIR='/Users/daniel/REPLACE_WITH_RECORDED_PREARM_DIR'
@@ -823,7 +826,7 @@ preservation block if running in a new shell.
 ~~~bash
 set -euo pipefail
 REPO='/Users/daniel/Documents/GeminiTop'
-FROZEN='465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed'
+FROZEN='f02c89e91eb2d5f962ce485669bba91e89eab37b'
 EVIDENCE_DIR='/Users/daniel/REPLACE_WITH_PRESERVED_EVIDENCE_DIRECTORY'
 test -d "$EVIDENCE_DIR/usb-root/stage4b-capability"
 test ! -L "$EVIDENCE_DIR/usb-root/stage4b-capability"
@@ -1034,7 +1037,7 @@ old = subprocess.check_output((
     "git", "-C", str(repo), "show",
     "29c303632419817db062c70f9360a725602a61d5:"
     "docs/platform/w176-stage4b-capability-physical-handoff.md"), text=True)
-frozen = "465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed"
+frozen = "f02c89e91eb2d5f962ce485669bba91e89eab37b"
 names = ("gemn_auto.sh", "mount_guard.sh", "root_mount_guard.sh",
          "capability_probe.sh")
 marker = "ARM_STAGE4B_CAPABILITY_PREFLIGHT"
