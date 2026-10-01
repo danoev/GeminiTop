@@ -8,6 +8,7 @@ import os
 import shutil
 import struct
 import subprocess
+import sys
 import tempfile
 import termios
 import threading
@@ -114,7 +115,9 @@ class PreflightFixture(unittest.TestCase):
 
     def capture(self):
         result = self.run_probe()
-        self.assertEqual(result.returncode, 0, result.stderr)
+        errors = self.payload / "stage4b-capability/ERRORS.txt"
+        detail = errors.read_text() if errors.exists() else "no ERRORS.txt"
+        self.assertEqual(result.returncode, 0, result.stderr + detail)
         return self.payload / "stage4b-capability"
 
     def install_real_guard_fixture(self):
@@ -197,6 +200,67 @@ class PreflightFixture(unittest.TestCase):
         self.assertFalse((self.payload / "ARM_STAGE4B_CAPABILITY_PREFLIGHT").exists())
         self.assertTrue((self.payload / ".stage4b-capability.lock").is_dir())
         self.assertNotIn("00000000", (self.payload / "stage4b-capability/kernel/symbol-names.txt").read_text())
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires real Linux procfs")
+    def test_real_proc_version_frozen_rejection_and_current_acceptance(self):
+        """Reproduce the frozen collector's failure with real zero-size procfs."""
+        proc_version = Path("/proc/version")
+        self.assertTrue(proc_version.is_file())
+        self.assertGreater(len(proc_version.read_bytes()), 0)
+        self.assertEqual(subprocess.check_output(
+            ["stat", "-c", "%F", str(proc_version)], text=True).strip(),
+            "regular empty file")
+        script = self.payload / "capability_probe.sh"
+        current = script.read_text()
+        original = subprocess.check_output([
+            "git", "show", "465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed:"
+            "tools/w176-stage4b-capability-probe/payload/capability_probe.sh",
+        ], cwd=HERE.parent.parent, text=True)
+        for variable, value in (("ROOT", self.target), ("PROC", self.proc),
+                                ("SYS", self.sys), ("DEV", self.dev)):
+            original = original.replace(f"{variable}=\n", f"{variable}={value}\n", 1)
+        hook = 'capture_virtual proc_version "$PROC/version"'
+        self.assertIn(hook, original)
+        self.assertIn(hook, current)
+        script.write_text(original.replace(hook, "capture_virtual proc_version /proc/version", 1))
+        old_result = self.run_probe()
+        self.assertNotEqual(old_result.returncode, 0)
+        old_output = self.payload / "stage4b-capability"
+        self.assertIn("failure.1=proc_version:absent_or_unsafe",
+                      (old_output / "ERRORS.txt").read_text())
+        self.assertFalse((old_output / "COMPLETE").exists())
+
+        # Both attempts use only this disposable fixture USB directory.
+        shutil.rmtree(old_output)
+        shutil.rmtree(self.payload / ".stage4b-capability.lock")
+        (self.payload / "ARM_STAGE4B_CAPABILITY_PREFLIGHT").write_text("arm\n")
+        script.write_text(current.replace(hook, "capture_virtual proc_version /proc/version", 1))
+        new_result = self.run_probe()
+        self.assertEqual(new_result.returncode, 0, new_result.stderr)
+        new_output = self.payload / "stage4b-capability"
+        self.assertEqual((new_output / "kernel/proc-version.txt").read_bytes(),
+                         proc_version.read_bytes())
+        self.assertEqual(analyze(new_output)["CAPTURE"], "COMPLETE")
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires real Linux procfs")
+    def test_real_proc_self_mount_views_keep_descriptor_identity(self):
+        """External stat's /proc/self must not change the compared inode."""
+        script = self.payload / "capability_probe.sh"
+        source = script.read_text()
+        for label, relative in (("mounts", "mounts"), ("mountinfo", "mountinfo")):
+            self.assertLessEqual(len(Path(f"/proc/self/{relative}").read_bytes()),
+                                 65536 if label == "mounts" else 131072)
+            old = f'capture_virtual {label} "$PROC/self/{relative}"'
+            self.assertIn(old, source)
+            source = source.replace(old, f'capture_virtual {label} /proc/self/{relative}', 1)
+        script.write_text(source)
+        result = self.run_probe()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        output = self.payload / "stage4b-capability"
+        self.assertEqual((output / "STATUS.txt").read_text().splitlines()[2],
+                         "status=COMPLETE")
+        self.assertGreater((output / "mounts/proc-mounts.txt").stat().st_size, 0)
+        self.assertGreater((output / "mounts/mountinfo.txt").stat().st_size, 0)
 
     def test_missing_optional_config_is_complete_unknown(self):
         (self.proc / "config.gz").unlink()
@@ -305,9 +369,8 @@ class PreflightFixture(unittest.TestCase):
         wrapper = bin_dir / "dd"
         wrapper.write_text(
             '#!/bin/sh\n'
-            'case "$*" in *proc/version*)\n'
-            '  for arg do case "$arg" in of=*) output=${arg#of=};; esac; done\n'
-            '  printf "Linux version 4.9.217\\n" > "$output"\n'
+            'case "$(readlink /proc/self/fd/0)" in *proc/version*)\n'
+            '  printf "Linux version 4.9.217\\n"\n'
             '  exit 7;;\n'
             'esac\n'
             'exec /usr/bin/dd "$@"\n')
@@ -326,7 +389,7 @@ class PreflightFixture(unittest.TestCase):
         wrapper = bin_dir / "dd"
         wrapper.write_text(
             '#!/bin/sh\n'
-            'case "$*" in *proc/config.gz*) exit 7;; esac\n'
+            'case "$(readlink /proc/self/fd/0)" in *proc/config.gz*) exit 7;; esac\n'
             'exec /usr/bin/dd "$@"\n')
         wrapper.chmod(0o755)
         script = self.payload / "capability_probe.sh"
@@ -775,7 +838,8 @@ class PreflightFixture(unittest.TestCase):
         bin_dir.mkdir()
         log = self.base / "dd.log"
         wrapper = bin_dir / "dd"
-        wrapper.write_text(f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\n'
+        wrapper.write_text(f'#!/bin/sh\nprintf "%s|%s\\n" '
+                           f'"$(readlink /proc/self/fd/0)" "$*" >> "{log}"\n'
                            'exec /usr/bin/dd "$@"\n')
         wrapper.chmod(0o755)
         script = self.payload / "capability_probe.sh"
@@ -789,7 +853,7 @@ class PreflightFixture(unittest.TestCase):
                               (self.proc / "mtd", 16385),
                               (self.sys / "class/mtd/mtd12/type", 4097)):
             with self.subTest(source=source):
-                self.assertTrue(any(f"if={source}" in call and "bs=1" in call
+                self.assertTrue(any(call.startswith(f"{source}|") and "bs=1" in call
                                     and f"count={count}" in call for call in calls))
 
     def test_review_undefined_libc_import_is_not_wrapper(self):

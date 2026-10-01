@@ -106,13 +106,7 @@ capture() {
         else optional_unknown "$LABEL:absent_or_unsafe"; fi
         return 1
     }
-    TYPE=$(stat -c '%F' "$SOURCE" 2>/dev/null) || TYPE=unknown
     SIZE=$(stat -c '%s' "$SOURCE" 2>/dev/null) || SIZE=unknown
-    [ "$TYPE" = "regular file" ] || {
-        if [ "$NEED" = mandatory ]; then mandatory_fail "$LABEL:not_regular"
-        else optional_unknown "$LABEL:not_regular"; fi
-        return 1
-    }
     case "$SIZE" in ''|*[!0-9]*) mandatory_fail "$LABEL:bad_size"; return 1 ;; esac
     if [ "$SIZE" -gt "$LIMIT" ]; then
         if [ "$NEED" = mandatory ]; then mandatory_fail "$LABEL:pre_size_limit"
@@ -153,8 +147,7 @@ capture() {
 capture_virtual() {
     LABEL=$1; SOURCE=$2; LIMIT=$3; DEST=$4; NEED=$5
     [ "$FAILURES" -eq 0 ] || return 1
-    [ ! -L "$SOURCE" ] && [ -f "$SOURCE" ] &&
-        [ "$(stat -c '%F' "$SOURCE" 2>/dev/null)" = "regular file" ] || {
+    [ ! -L "$SOURCE" ] && [ -f "$SOURCE" ] || {
         if [ "$NEED" = mandatory ]; then mandatory_fail "$LABEL:absent_or_unsafe"
         else optional_unknown "$LABEL:absent_or_unsafe"; fi
         return 1
@@ -168,7 +161,29 @@ capture_virtual() {
             BLOCK_SIZE=1; BLOCKS=$((LIMIT + 1)) ;;
         *) BLOCK_SIZE=4096; BLOCKS=$((LIMIT / 4096 + 1)) ;;
     esac
-    if dd if="$SOURCE" of="$TEMP" bs="$BLOCK_SIZE" count="$BLOCKS" 2>/dev/null; then :; else
+    # Open once, then compare the opened regular object with the exact path
+    # before and after the bounded read. Proc/sysfs st_size may be zero even
+    # when content is readable; neither st_size nor stat's prose admits it.
+    if /bin/sh -c '
+        source=$1; temp=$2; block_size=$3; blocks=$4
+        [ ! -L "$source" ] && [ -f "$source" ] || exit 20
+        # External stat has its own /proc/self; bind these two reviewed
+        # self-views to this shell PID for meaningful inode comparison.
+        case "$source" in
+            /proc/self/mounts) checked=/proc/$$/mounts ;;
+            /proc/self/mountinfo) checked=/proc/$$/mountinfo ;;
+            *) checked=$source ;;
+        esac
+        before=$(stat -c "%d|%i|%f" "$checked") || exit 21
+        exec 3< "$checked" || exit 22
+        [ -f /proc/self/fd/3 ] || exit 23
+        opened=$(stat -L -c "%d|%i|%f" /proc/self/fd/3) || exit 24
+        [ "$opened" = "$before" ] && [ ! -L "$source" ] || exit 25
+        dd bs="$block_size" count="$blocks" <&3 > "$temp" 2>/dev/null || exit 26
+        [ "$(stat -L -c "%d|%i|%f" /proc/self/fd/3)" = "$before" ] || exit 27
+        [ "$(stat -c "%d|%i|%f" "$checked")" = "$before" ] &&
+            [ ! -L "$source" ] && [ -f "$source" ] || exit 28
+    ' sh "$SOURCE" "$TEMP" "$BLOCK_SIZE" "$BLOCKS"; then :; else
         rm -f "$TEMP"
         if [ "$NEED" = mandatory ]; then mandatory_fail "$LABEL:producer_failed"
         else optional_unknown "$LABEL:producer_failed"; fi
