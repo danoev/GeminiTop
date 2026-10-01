@@ -410,22 +410,109 @@ PY
 }
 ~~~
 
+## Exact reviewed USB root gate
+
+This separate host-only function binds the complete root inventory to the
+pre-arm record. It uses the housekeeping names and types actually observed
+during clean-volume preparation; it does **not** construct a new housekeeping
+allowlist. A new root object, even one that looks like macOS housekeeping,
+fails. Housekeeping *contents* are not claimed immutable by this check; the
+boundary here is the exact set of root names and object types. The same
+function accepts an unarmed or armed state. It does not open special objects
+or write to the USB.
+
+~~~bash
+final_root_inventory_gate() {
+python3 - "$1" "$2" "$3" "$4" "$5" <<'PY'
+import json, os, pathlib, stat, sys
+prearm_path, guard_text, frozen, root, state = sys.argv[1:]
+if state not in ("unarmed", "armed"):
+    raise SystemExit("STOP: invalid root-inventory state")
+guard = json.loads(guard_text)
+host = pathlib.Path(guard["host"]["canonical_parent"])
+record = pathlib.Path(prearm_path).resolve(strict=True)
+if record.name != "prearm.json" or record.parent.parent != host or \
+   record.stat().st_dev != host.stat().st_dev or \
+   not stat.S_ISREG(os.lstat(prearm_path).st_mode):
+    raise SystemExit("STOP: pre-arm record is not on validated internal host storage")
+with open(record, encoding="utf-8") as stream:
+    prearm = json.load(stream)
+with open(record.parent / "initial-clean-root.json", encoding="utf-8") as stream:
+    prepared_root = json.load(stream)
+with open(record.parent / "preparation-guard.json", encoding="utf-8") as stream:
+    prepared_guard = json.load(stream)
+names = ("gemn_auto.sh", "mount_guard.sh", "root_mount_guard.sh",
+         "capability_probe.sh")
+initial = prearm.get("clean_usb_initial_root")
+if prearm.get("schema") != 1 or \
+   prearm.get("frozen_implementation") != frozen or \
+   prearm.get("arming_marker_created") is not False or \
+   not isinstance(initial, dict) or initial != prepared_root or \
+   not isinstance(prearm.get("payload"), dict) or \
+   set(prearm["payload"]) != set(names) or \
+   prearm.get("usb", {}).get("stable") != guard["usb"]["stable"] or \
+   prepared_guard.get("usb", {}).get("stable") != guard["usb"]["stable"]:
+    raise SystemExit("STOP: malformed or mismatched pre-arm provenance")
+for name, kind in initial.items():
+    if not isinstance(name, str) or not name or name in (".", "..") or \
+       "/" in name or "\x00" in name or name in names or \
+       name in ("ARM_STAGE4B_CAPABILITY_PREFLIGHT",
+                ".stage4b-capability.lock", "stage4b-capability") or \
+       name.startswith("stage4b-capability-") or \
+       kind not in ("file", "directory"):
+        raise SystemExit("STOP: invalid prepared-root mapping")
+expected = dict(initial)
+expected.update({name: "file" for name in names})
+if state == "armed":
+    expected["ARM_STAGE4B_CAPABILITY_PREFLIGHT"] = "file"
+actual = {}
+for entry in os.scandir(root):
+    mode = entry.stat(follow_symlinks=False).st_mode
+    actual[entry.name] = (
+        "file" if stat.S_ISREG(mode) else
+        "directory" if stat.S_ISDIR(mode) else
+        "symlink" if stat.S_ISLNK(mode) else "special")
+if actual != expected:
+    raise SystemExit("STOP: USB root differs from reviewed " + state + " inventory")
+print("EXACT " + state.upper() + " ROOT INVENTORY: PASS")
+PY
+}
+~~~
+
 ## Future arming and one-attempt operator procedure
 
-**DO NOT RUN UNTIL SEPARATELY AUTHORISED.** The following is the future
-arming gate and final one-line arming action, not an instruction to execute
-now. Before the final command, run
-host_storage_guard and frozen_provenance_gate against the preserved pre-arm
-record, confirm no result or lock, and obtain an independent physical-handoff
-GO plus explicit owner approval. A pre-existing marker is an abort, never a
-reason to overwrite it. A changed session-local device identifier alone does
-not negate an otherwise matching stable identity after reinsertion.
+**DO NOT RUN UNTIL SEPARATELY AUTHORISED.** After a fresh independent
+physical-handoff GO and separate owner approval, paste all three host-only
+function definitions into a new Mac /bin/bash session and enter the observed
+reinserted USB mount and recorded PREARM_DIR. The following block makes no
+USB mutation until its marker-creation command. A pre-existing marker is an
+abort, never a reason to overwrite it. A changed session-local device
+identifier alone does not negate matching stable identity after reinsertion.
 
 ~~~bash
 # DO NOT RUN UNTIL SEPARATELY AUTHORISED
+set -euo pipefail
+REPO='/Users/daniel/Documents/GeminiTop'
+FROZEN='465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed'
+USB_VOLUME='/Volumes/REPLACE_WITH_REINSERTED_USB_LABEL'
+EVIDENCE_PARENT='/Users/daniel/REPLACE_WITH_PRIVATE_LOCAL_PARENT'
+PREARM_DIR='/Users/daniel/REPLACE_WITH_RECORDED_PREARM_DIR'
+# 1–3: validate host destination, current USB identity, and stable pre-arm identity.
 CURRENT_GUARD=$(host_storage_guard "$USB_VOLUME" "$EVIDENCE_PARENT" "$REPO")
+# 4: exact frozen payload bytes, size, and SHA-256.
 frozen_provenance_gate "$PREARM_DIR/prearm.json" "$CURRENT_GUARD" \
   "$REPO" "$FROZEN" "$USB_VOLUME"
+# 5: exact reviewed unarmed root names and lstat object types.
+final_root_inventory_gate "$PREARM_DIR/prearm.json" "$CURRENT_GUARD" \
+  "$FROZEN" "$USB_VOLUME" unarmed
+# 6–7: current Mac mount accessibility (host evidence only).
+for name in gemn_auto.sh mount_guard.sh root_mount_guard.sh capability_probe.sh; do
+  test -r "$USB_VOLUME/$name" || { echo "STOP: unreadable $name" >&2; exit 1; }
+done
+test -x "$USB_VOLUME/gemn_auto.sh" || {
+  echo 'STOP: gemn_auto.sh is not executable on this Mac mount' >&2; exit 1;
+}
+# 8: independent one-shot/marker defense-in-depth check.
 python3 - "$USB_VOLUME" <<'PY'
 import os, sys
 names = set(os.listdir(sys.argv[1]))
@@ -436,8 +523,39 @@ for forbidden in ("ARM_STAGE4B_CAPABILITY_PREFLIGHT",
 if any(name.startswith("stage4b-capability-") for name in names):
     raise SystemExit("STOP: numbered old result exists")
 PY
+# Recheck the entire mounted-media and host identity immediately before writing.
+test "$(host_storage_guard "$USB_VOLUME" "$EVIDENCE_PARENT" "$REPO")" = "$CURRENT_GUARD"
+# 9: first intended USB mutation of this arming phase.
 ( set -C; printf 'one reviewed metadata capture\n' > "$USB_VOLUME/ARM_STAGE4B_CAPABILITY_PREFLIGHT" )
+# 10–11: read-only post-marker verification; failure means MANUAL REVIEW.
+if ! { test -f "$USB_VOLUME/ARM_STAGE4B_CAPABILITY_PREFLIGHT" &&
+       test ! -L "$USB_VOLUME/ARM_STAGE4B_CAPABILITY_PREFLIGHT" &&
+       final_root_inventory_gate "$PREARM_DIR/prearm.json" "$CURRENT_GUARD" \
+         "$FROZEN" "$USB_VOLUME" armed &&
+       frozen_provenance_gate "$PREARM_DIR/prearm.json" "$CURRENT_GUARD" \
+         "$REPO" "$FROZEN" "$USB_VOLUME"; }; then
+  echo 'STOP: armed USB needs MANUAL REVIEW; do not insert or remove the marker' >&2
+  exit 1
+fi
 ~~~
+
+The post-marker gate requires exactly the prepared initial root objects, four
+scripts, and the regular non-symlink live marker—no lock, result, or other
+object. If it fails, do not insert, repair, delete the marker, or retry with
+this USB; preserve it for manual review and use a newly prepared clean USB if
+a later attempt is separately approved. A new macOS housekeeping root entry
+is just as unacceptable as UNEXPECTED.BIN. No new housekeeping allowlist is
+made after preparation.
+
+CONFIRMED HOST-SIDE after a passing future check: this Mac mount presents all
+four scripts readable and gemn_auto.sh executable. PRIOR PHYSICAL EVIDENCE:
+the stock RoadTop autorun executed gemn_auto.sh in earlier stages. UNKNOWN:
+whether this exact future USB mount will present the same effective execute
+policy on the RoadTop until the controlled physical attempt is observed.
+These checks address operator error and non-malicious preparation drift, not
+a malicious privileged host process, hardware substitution after validation,
+or concurrent privileged mount manipulation. They are validation-to-use
+checks, not an adversarial security boundary.
 
 For an approved attempt, park the vehicle safely and let the known RoadTop
 finish booting. The engine is **not established as required** for this Linux
@@ -893,6 +1011,133 @@ selects the writable APFS Data volume for an ordinary home directory. The
 old documentation's recursive cleanup was inspected as a nested-mount risk;
 no nested filesystem was mounted or deleted during testing. These fixtures
 do not prove behaviour on a future USB or the RoadTop.
+
+The following committed-in-document regression harness is host-only. It
+creates a disposable fixture **only under /private/tmp**, reads the frozen
+Git blobs, and extracts the documented Python gates for testing. It never
+mounts, formats, or touches a real USB or the RoadTop. Run it from a checkout
+containing this document, setting DOC to that checkout's absolute path. It
+reproduces the old UNEXPECTED.BIN bypass against documentation commit
+29c303632419817db062c70f9360a725602a61d5, then tests the new exact
+unarmed/armed root checks. It tests host access bits on the disposable host
+filesystem; these do not establish RoadTop FAT execution semantics.
+
+~~~bash
+DOC='/ABSOLUTE/PATH/TO/docs/platform/w176-stage4b-capability-physical-handoff.md'
+python3 - "$DOC" <<'PY'
+import contextlib, hashlib, io, json, os, pathlib, stat, subprocess, sys, tempfile
+
+doc = pathlib.Path(sys.argv[1]).resolve(strict=True)
+repo = doc.parents[2]
+current = doc.read_text(encoding="utf-8")
+old = subprocess.check_output((
+    "git", "-C", str(repo), "show",
+    "29c303632419817db062c70f9360a725602a61d5:"
+    "docs/platform/w176-stage4b-capability-physical-handoff.md"), text=True)
+frozen = "465e7bd3809b3165bbe4df2d46c53f6cc25ea8ed"
+names = ("gemn_auto.sh", "mount_guard.sh", "root_mount_guard.sh",
+         "capability_probe.sh")
+marker = "ARM_STAGE4B_CAPABILITY_PREFLIGHT"
+
+def embedded(text, heading):
+    tail = text.split(heading, 1)[1].split("<<'PY'\n", 1)[1]
+    body = tail.split("\nPY", 1)[0] + "\n"
+    compile(body, "<documented-gate>", "exec")
+    return body
+
+root_code = embedded(current, "## Exact reviewed USB root gate")
+bytes_code = embedded(current, "## Reusable pre-arm identity and frozen-payload gate")
+old_name_code = embedded(old, "## Future arming and one-attempt operator procedure")
+
+def run(code, args):
+    prior = sys.argv
+    try:
+        sys.argv = ["host-fixture", *args]
+        with contextlib.redirect_stdout(io.StringIO()):
+            exec(compile(code, "<documented-gate>", "exec"), {})
+    finally:
+        sys.argv = prior
+
+def stops(code, args):
+    try:
+        run(code, args)
+    except (SystemExit, OSError, ValueError, KeyError, TypeError):
+        return True
+    return False
+
+with tempfile.TemporaryDirectory(prefix="gt-root-gate-", dir="/private/tmp") as tmp:
+    base = pathlib.Path(tmp)
+    root = base / "usb-fixture"
+    root.mkdir()
+    assert not str(root).startswith("/Volumes/")
+    host = base / "internal-host-fixture"
+    host.mkdir()
+    record = host / "stage4b-prearm.fixture"
+    record.mkdir()
+    stable = {"VolumeUUID": "FIXTURE-1234", "VolumeName": "FIXTURE",
+              "FilesystemType": "msdos", "Size": 1024, "BusProtocol": "USB",
+              "Internal": False, "RemovableMedia": True}
+    guard = {"host": {"canonical_parent": str(host)},
+             "usb": {"stable": stable}}
+    (root / ".Trashes").mkdir()
+    payload = {}
+    for name in names:
+        data = subprocess.check_output((
+            "git", "-C", str(repo), "show", frozen + ":"
+            "tools/w176-stage4b-capability-probe/payload/" + name))
+        path = root / name
+        path.write_bytes(data)
+        path.chmod(0o755)
+        payload[name] = {"bytes": len(data),
+                         "sha256": hashlib.sha256(data).hexdigest()}
+    initial = {".Trashes": "directory"}
+    manifest = {"schema": 1, "frozen_implementation": frozen,
+                "arming_marker_created": False, "clean_usb_initial_root": initial,
+                "payload": payload, "usb": {"stable": stable}}
+    (record / "prearm.json").write_text(json.dumps(manifest))
+    (record / "initial-clean-root.json").write_text(json.dumps(initial))
+    (record / "preparation-guard.json").write_text(json.dumps(guard))
+    root_args = [str(record / "prearm.json"), json.dumps(guard), frozen, str(root)]
+    bytes_args = [str(record / "prearm.json"), json.dumps(guard),
+                  str(repo), frozen, str(root)]
+    def checked(mode="unarmed"):
+        return run(root_code, root_args + [mode])
+    def rejected(mode="unarmed"):
+        return stops(root_code, root_args + [mode])
+
+    checked()  # A: exact prepared root
+    extra = root / "UNEXPECTED.BIN"
+    extra.write_bytes(b"unexpected")
+    run(bytes_code, bytes_args)  # old four-script gate still passes
+    run(old_name_code, [str(root)])  # old name-only arming check still passes
+    assert rejected()  # B: new exact gate closes the bypass
+    extra.unlink()
+    extra.mkdir(); assert rejected(); extra.rmdir()  # C: directory
+    extra.symlink_to(root / names[0]); assert rejected(); extra.unlink()  # D
+    os.mkfifo(extra); assert rejected(); extra.unlink()  # E: special object
+    housekeeping = root / ".Spotlight-V100"
+    housekeeping.mkdir(); assert rejected(); housekeeping.rmdir()  # F
+    (root / ".Trashes").rmdir(); assert rejected()  # G: missing baseline
+    (root / ".Trashes").write_bytes(b"type changed")
+    assert rejected(); (root / ".Trashes").unlink(); (root / ".Trashes").mkdir()  # H
+    target = root / names[0]
+    saved = target.read_bytes()
+    target.unlink(); assert rejected()  # I: missing payload
+    target.symlink_to(root / names[1]); assert rejected(); target.unlink()  # J
+    target.write_bytes(b"changed"); target.chmod(0o755)
+    checked(); assert stops(bytes_code, bytes_args)  # K: names/types alone are insufficient
+    target.write_bytes(saved); target.chmod(0o000)
+    assert subprocess.run(("/bin/bash", "-c", 'test -r "$1"', "sh", str(target))).returncode != 0  # L
+    target.chmod(0o644)
+    assert subprocess.run(("/bin/bash", "-c", 'test -x "$1"', "sh", str(target))).returncode != 0  # M
+    target.chmod(0o755)
+    checked(); run(bytes_code, bytes_args)  # N: eligible before arming
+    (root / marker).write_text("disposable fixture marker\n")
+    checked("armed")  # O: exact armed root
+    extra.write_bytes(b"late addition"); assert rejected("armed")  # P
+print("PASS: old extra-root bypass reproduced; exact root/access fixture matrix A–P")
+PY
+~~~
 
 ## Stop conditions
 
